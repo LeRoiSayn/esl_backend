@@ -1,0 +1,55 @@
+# VCS / IDE
+.git
+.gitattributes
+.gitignore
+.idea
+.vscode
+*.swp
+*.swo
+
+# Env & secrets (inject at runtime)
+.env
+.env.*
+!.env.example
+
+# Dependencies (installed in image)
+vendor
+
+# Frontend / misc (not part of API image)
+node_modules
+npm-debug.log*
+yarn-error.log*
+
+# Tests & tooling
+tests
+phpunit.xml
+.phpunit.result.cache
+phpcs.xml
+pint.json
+phpstan.neon
+
+# Logs & cache (ephemeral; recreated at runtime)
+storage/logs/*
+!storage/logs/.gitignore
+storage/framework/cache/*
+!storage/framework/cache/.gitignore
+storage/framework/sessions/*
+!storage/framework/sessions/.gitignore
+storage/framework/views/*
+!storage/framework/views/.gitignore
+bootstrap/cache/*
+!bootstrap/cache/.gitignore
+
+# Docs
+README.md
+*.md
+docs
+
+# Docker (avoid recursive context)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
