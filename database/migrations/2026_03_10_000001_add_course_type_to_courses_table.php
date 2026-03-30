@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::table('courses', function (Blueprint $table) {
             $table->enum('course_type', ['tronc_commun', 'specialisation'])
                 ->default('specialisation')
-                ->after('semester');
+                ;
         });
     }
 

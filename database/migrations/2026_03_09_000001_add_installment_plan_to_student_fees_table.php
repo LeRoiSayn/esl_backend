@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('student_fees', function (Blueprint $table) {
-            $table->json('installment_plan')->nullable()->after('academic_year');
+            $table->json('installment_plan')->nullable();
         });
     }
 

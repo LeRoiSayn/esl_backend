@@ -90,7 +90,7 @@ class AdminController extends Controller
         // Full programme: all active courses for the student's department
         $allProgrammeCourses = Course::where('department_id', $student->department_id)
             ->where('is_active', true)
-            ->orderByRaw("FIELD(level, 'L1','L2','L3','M1','M2','D1','D2','D3')")
+            ->orderByRaw("CASE level WHEN 'L1' THEN 1 WHEN 'L2' THEN 2 WHEN 'L3' THEN 3 WHEN 'M1' THEN 4 WHEN 'M2' THEN 5 WHEN 'D1' THEN 6 WHEN 'D2' THEN 7 WHEN 'D3' THEN 8 ELSE 9 END")
             ->orderBy('semester')
             ->orderBy('name')
             ->get();
@@ -364,7 +364,7 @@ class AdminController extends Controller
         // -------------------- Academic (curriculum coverage) --------------------
         $allProgrammeCourses = Course::where('department_id', $student->department_id)
             ->where('is_active', true)
-            ->orderByRaw("FIELD(level, 'L1','L2','L3','M1','M2','D1','D2','D3')")
+            ->orderByRaw("CASE level WHEN 'L1' THEN 1 WHEN 'L2' THEN 2 WHEN 'L3' THEN 3 WHEN 'M1' THEN 4 WHEN 'M2' THEN 5 WHEN 'D1' THEN 6 WHEN 'D2' THEN 7 WHEN 'D3' THEN 8 ELSE 9 END")
             ->orderBy('semester')
             ->orderBy('name')
             ->get();

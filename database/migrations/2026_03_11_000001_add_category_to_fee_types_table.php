@@ -12,7 +12,7 @@ return new class extends Migration
         Schema::table('fee_types', function (Blueprint $table) {
             $table->enum('category', ['registration', 'tuition', 'other'])
                   ->default('tuition')
-                  ->after('level');
+                  ;
         });
 
         // Mark existing registration-type fees by name

@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::table('students', function (Blueprint $table) {
             // JSON array of course IDs that the student must retake in future semesters.
             // Populated automatically when a student is promoted to the next academic level.
-            $table->json('retake_courses')->nullable()->after('status');
+            $table->json('retake_courses')->nullable();
         });
     }
 

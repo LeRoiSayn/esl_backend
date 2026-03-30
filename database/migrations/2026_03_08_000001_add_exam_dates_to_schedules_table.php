@@ -9,8 +9,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('schedules', function (Blueprint $table) {
-            $table->date('midterm_date')->nullable()->after('room');
-            $table->date('final_date')->nullable()->after('midterm_date');
+            $table->date('midterm_date')->nullable();
+            $table->date('final_date')->nullable();
         });
     }
 

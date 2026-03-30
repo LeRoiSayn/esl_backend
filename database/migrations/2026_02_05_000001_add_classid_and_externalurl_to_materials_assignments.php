@@ -13,7 +13,7 @@ return new class extends Migration
                 $table->foreignId('class_id')->nullable()->constrained('classes')->onDelete('cascade');
             }
             if (!Schema::hasColumn('course_materials', 'external_url')) {
-                $table->string('external_url')->nullable()->after('file_path');
+                $table->string('external_url')->nullable();
             }
             // make file_path nullable to allow link-only materials
             if (Schema::hasColumn('course_materials', 'file_path')) {

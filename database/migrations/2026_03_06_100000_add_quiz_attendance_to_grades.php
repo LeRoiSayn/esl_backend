@@ -10,9 +10,9 @@ return new class extends Migration
     {
         Schema::table('grades', function (Blueprint $table) {
             // Add after existing columns, before final_grade
-            $table->decimal('attendance_score', 5, 2)->nullable()->after('enrollment_id')
+            $table->decimal('attendance_score', 5, 2)->nullable()
                 ->comment('Attendance component (10%)');
-            $table->decimal('quiz_score', 5, 2)->nullable()->after('attendance_score')
+            $table->decimal('quiz_score', 5, 2)->nullable()
                 ->comment('Quiz component (15%)');
         });
     }

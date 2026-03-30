@@ -7,13 +7,14 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement("ALTER TABLE enrollments MODIFY COLUMN status ENUM('enrolled','dropped','completed','transfer') DEFAULT 'enrolled'");
+        DB::statement("ALTER TABLE enrollments DROP CONSTRAINT IF EXISTS enrollments_status_check");
+        DB::statement("ALTER TABLE enrollments ADD CONSTRAINT enrollments_status_check CHECK (status IN ('enrolled','dropped','completed','transfer'))");
     }
 
     public function down(): void
     {
-        // Nullify any transfer rows before removing the value
         DB::table('enrollments')->where('status', 'transfer')->update(['status' => 'completed']);
-        DB::statement("ALTER TABLE enrollments MODIFY COLUMN status ENUM('enrolled','dropped','completed') DEFAULT 'enrolled'");
+        DB::statement("ALTER TABLE enrollments DROP CONSTRAINT IF EXISTS enrollments_status_check");
+        DB::statement("ALTER TABLE enrollments ADD CONSTRAINT enrollments_status_check CHECK (status IN ('enrolled','dropped','completed'))");
     }
 };

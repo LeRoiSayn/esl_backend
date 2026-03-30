@@ -9,8 +9,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('grades', function (Blueprint $table) {
-            $table->timestamp('validated_at')->nullable()->after('graded_at');
-            $table->foreignId('validated_by')->nullable()->constrained('users')->onDelete('set null')->after('validated_at');
+            $table->timestamp('validated_at')->nullable();
+            $table->foreignId('validated_by')->nullable()->constrained('users')->onDelete('set null');
         });
     }
 

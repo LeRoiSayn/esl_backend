@@ -9,14 +9,14 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Add semester column to courses table (which semester in the year this course belongs to)
         Schema::table('courses', function (Blueprint $table) {
-            $table->enum('semester', ['1', '2', '3'])->default('1')->after('level');
+            $table->enum('semester', ['1', '2', '3'])->default('1');
         });
 
-        // Update classes table: change semester enum to support 3 semesters
-        // MySQL doesn't support ALTER ENUM easily, so we modify the column
-        DB::statement("ALTER TABLE classes MODIFY COLUMN semester ENUM('1', '2', '3') NOT NULL DEFAULT '1'");
+        // PostgreSQL: update CHECK constraint to support 3 semesters
+        DB::statement("ALTER TABLE classes DROP CONSTRAINT IF EXISTS classes_semester_check");
+        DB::statement("ALTER TABLE classes ADD CONSTRAINT classes_semester_check CHECK (semester IN ('1', '2', '3'))");
+        DB::statement("ALTER TABLE classes ALTER COLUMN semester SET DEFAULT '1'");
     }
 
     public function down(): void
@@ -25,6 +25,7 @@ return new class extends Migration
             $table->dropColumn('semester');
         });
 
-        DB::statement("ALTER TABLE classes MODIFY COLUMN semester ENUM('1', '2') NOT NULL DEFAULT '1'");
+        DB::statement("ALTER TABLE classes DROP CONSTRAINT IF EXISTS classes_semester_check");
+        DB::statement("ALTER TABLE classes ADD CONSTRAINT classes_semester_check CHECK (semester IN ('1', '2'))");
     }
 };

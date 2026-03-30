@@ -415,7 +415,7 @@ class ChatbotController extends Controller
             $classIds = ClassModel::where('teacher_id', $teacher->id)->where('is_active', true)->pluck('id');
             $schedules = Schedule::with('class.course')
                 ->whereIn('class_id', $classIds)
-                ->orderByRaw("FIELD(day_of_week, 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday')")
+                ->orderByRaw("CASE day_of_week WHEN 'monday' THEN 1 WHEN 'tuesday' THEN 2 WHEN 'wednesday' THEN 3 WHEN 'thursday' THEN 4 WHEN 'friday' THEN 5 WHEN 'saturday' THEN 6 ELSE 7 END")
                 ->orderBy('start_time')
                 ->get();
 
@@ -525,7 +525,7 @@ class ChatbotController extends Controller
 
             $schedules = Schedule::with('class.course')
                 ->whereIn('class_id', $enrolledClassIds)
-                ->orderByRaw("FIELD(day_of_week, 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday')")
+                ->orderByRaw("CASE day_of_week WHEN 'monday' THEN 1 WHEN 'tuesday' THEN 2 WHEN 'wednesday' THEN 3 WHEN 'thursday' THEN 4 WHEN 'friday' THEN 5 WHEN 'saturday' THEN 6 ELSE 7 END")
                 ->orderBy('start_time')
                 ->get();
 

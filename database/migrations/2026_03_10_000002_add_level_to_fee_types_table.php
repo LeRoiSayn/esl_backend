@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('fee_types', function (Blueprint $table) {
-            $table->string('level', 10)->nullable()->after('is_active')
+            $table->string('level', 10)->nullable()
                 ->comment('Target student level, e.g. L1, L2, L3. NULL = applies to all levels.');
         });
     }

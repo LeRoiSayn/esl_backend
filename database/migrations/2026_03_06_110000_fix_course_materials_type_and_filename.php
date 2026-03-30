@@ -10,16 +10,17 @@ return new class extends Migration
     public function up(): void
     {
         // Change type from enum to string so 'link' is accepted
-        DB::statement("ALTER TABLE course_materials MODIFY COLUMN type VARCHAR(50) NOT NULL DEFAULT 'pdf'");
+        DB::statement("ALTER TABLE course_materials DROP CONSTRAINT IF EXISTS course_materials_type_check");
+        DB::statement("ALTER TABLE course_materials ALTER COLUMN type TYPE VARCHAR(50)");
+        DB::statement("ALTER TABLE course_materials ALTER COLUMN type SET DEFAULT 'pdf'");
 
         // Make file_name nullable (link-type materials have no file)
-        DB::statement("ALTER TABLE course_materials MODIFY COLUMN file_name VARCHAR(255) NULL");
+        DB::statement("ALTER TABLE course_materials ALTER COLUMN file_name DROP NOT NULL");
     }
 
     public function down(): void
     {
-        // Revert to original enum (any 'link' rows will need to be cleaned first)
-        DB::statement("ALTER TABLE course_materials MODIFY COLUMN type ENUM('pdf','video','document','presentation','image','other') NOT NULL DEFAULT 'pdf'");
-        DB::statement("ALTER TABLE course_materials MODIFY COLUMN file_name VARCHAR(255) NOT NULL");
+        DB::statement("ALTER TABLE course_materials ADD CONSTRAINT course_materials_type_check CHECK (type IN ('pdf','video','document','presentation','image','other'))");
+        DB::statement("ALTER TABLE course_materials ALTER COLUMN file_name SET NOT NULL");
     }
 };
