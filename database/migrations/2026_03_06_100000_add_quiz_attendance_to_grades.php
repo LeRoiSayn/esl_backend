@@ -1,0 +1,26 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('grades', function (Blueprint $table) {
+            // Add after existing columns, before final_grade
+            $table->decimal('attendance_score', 5, 2)->nullable()->after('enrollment_id')
+                ->comment('Attendance component (10%)');
+            $table->decimal('quiz_score', 5, 2)->nullable()->after('attendance_score')
+                ->comment('Quiz component (15%)');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('grades', function (Blueprint $table) {
+            $table->dropColumn(['attendance_score', 'quiz_score']);
+        });
+    }
+};
