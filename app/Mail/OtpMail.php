@@ -30,10 +30,13 @@ class OtpMail extends Mailable
 
     public function content(): Content
     {
+        $logoPath = public_path('esl-logo.png');
+
         return new Content(
             view: 'emails.otp',
             with: [
-                'logoPath' => public_path('esl-logo.png'),
+                'logoPath'   => $logoPath,
+                'logoExists' => is_file($logoPath),
             ]
         );
     }

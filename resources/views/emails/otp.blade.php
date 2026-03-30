@@ -14,8 +14,10 @@
           <!-- Header -->
           <tr>
             <td style="background:linear-gradient(135deg,#1e3a5f 0%,#2d6a9f 100%);padding:32px 40px;text-align:center;">
+              @if(!empty($logoExists))
               <img src="{{ $message->embed($logoPath) }}" alt="ESL" width="80" height="80"
                    style="border-radius:50%;border:3px solid rgba(255,255,255,0.2);margin-bottom:12px;display:block;margin-left:auto;margin-right:auto;" />
+              @endif
               <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:0.5px;">
                  École de Santé de Libreville
               </h1>
