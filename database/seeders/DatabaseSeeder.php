@@ -12,10 +12,10 @@ class DatabaseSeeder extends Seeder
     {
         User::create([
             'username' => 'registrar1',
-            'email' => 'registrar1@esl.local',
+            'email' => 'diallogloire+@gmail.com',
             'password' => Hash::make('password123'),
-            'first_name' => 'Jean',
-            'last_name' => 'Registrar',
+            'first_name' => 'Alex',
+            'last_name' => 'Akounga',
             'role' => 'registrar',
             'phone' => '+241 01 23 45 69',
             'is_active' => true,

@@ -11,6 +11,8 @@ use App\Models\Course;
 use App\Models\CourseEquivalence;
 use App\Models\User;
 use App\Models\Payment;
+use App\Models\StudentFee;
+use App\Models\Transaction;
 use App\Models\Teacher;
 use App\Models\Department;
 use App\Models\ClassModel;
@@ -77,7 +79,8 @@ class AdminController extends Controller
             'enrollments.class.teacher.user',
             'enrollments.grades',
             'enrollments.attendance',
-            'fees',
+            'fees.feeType',
+            'fees.payments',
         ])->findOrFail($id);
 
         // Determine current academic period
@@ -275,9 +278,27 @@ class AdminController extends Controller
             ->get(['id', 'name', 'code', 'level'])
             ->toArray();
 
+        $feesDetail = $student->fees->map(fn($f) => [
+            'fee_type'      => $f->feeType ? ['name' => $f->feeType->name, 'category' => $f->feeType->category] : null,
+            'amount'        => $f->amount,
+            'paid_amount'   => $f->paid_amount,
+            'balance'       => (float)$f->amount - (float)$f->paid_amount,
+            'status'        => $f->status,
+            'due_date'      => $f->due_date,
+            'academic_year' => $f->academic_year,
+            'payments'      => $f->payments->sortByDesc('payment_date')->values()->map(fn($p) => [
+                'payment_date'     => $p->payment_date,
+                'amount'           => $p->amount,
+                'payment_method'   => $p->payment_method,
+                'reference_number' => $p->reference_number,
+                'fee_type_name'    => $f->feeType?->name,
+            ])->toArray(),
+        ])->toArray();
+
         return response()->json([
             'student' => $student,
             'retake_course_details' => $retakeCourseDetails,
+            'fees_detail' => $feesDetail,
             'academic_progress' => [
                 'current_level'     => $student->level,
                 'current_semester'  => $currentCalendarSemester,
@@ -302,6 +323,247 @@ class AdminController extends Controller
                 'attendance_rate' => $attendanceRate,
             ],
         ]);
+    }
+
+    /**
+     * Admin report (print-friendly data):
+     * - Academic curriculum report: all programme courses (including not yet taken)
+     * - Financial report: fees & payments grouped by academic year
+     */
+    public function getStudentReport(int $id)
+    {
+        $payload = $this->buildStudentReportPayload($id);
+        return $this->success($payload);
+    }
+
+    private function academicYearFromDate($date): string
+    {
+        $d = $date ? \Carbon\Carbon::parse($date) : now();
+        // Academic year starts in September
+        $year = (int) $d->format('Y');
+        $month = (int) $d->format('n');
+        return $month >= 9 ? "{$year}-" . ($year + 1) : ($year - 1) . "-{$year}";
+    }
+
+    /**
+     * Build the payload used by both:
+     * - JSON preview (getStudentReport)
+     * - printable/downloadable sheet (downloadStudentReportHtml)
+     */
+    private function buildStudentReportPayload(int $id): array
+    {
+        $student = Student::with([
+            'user',
+            'department.faculty',
+            'enrollments.class.course',
+            'enrollments.grades',
+            'fees.feeType',
+            'fees.payments',
+        ])->findOrFail($id);
+
+        // -------------------- Academic (curriculum coverage) --------------------
+        $allProgrammeCourses = Course::where('department_id', $student->department_id)
+            ->where('is_active', true)
+            ->orderByRaw("FIELD(level, 'L1','L2','L3','M1','M2','D1','D2','D3')")
+            ->orderBy('semester')
+            ->orderBy('name')
+            ->get();
+
+        $enrolledCourseMap = [];
+        foreach ($student->enrollments as $enrollment) {
+            $courseId = $enrollment->class->course_id ?? null;
+            if (!$courseId) continue;
+            $enrollment->latest_grade = $enrollment->grades->sortByDesc('created_at')->first();
+            $enrolledCourseMap[$courseId] = $enrollment;
+        }
+
+        $curriculum = [];
+        foreach ($allProgrammeCourses as $course) {
+            $enrollment = $enrolledCourseMap[$course->id] ?? null;
+            $grade = $enrollment?->latest_grade;
+            $finalGrade = $grade ? (float) $grade->final_grade : null;
+
+            if ($finalGrade !== null && $finalGrade >= 50) {
+                $status = 'passed';
+            } elseif ($finalGrade !== null && $finalGrade < 50) {
+                $status = 'failed';
+            } elseif ($enrollment) {
+                $status = 'in_progress';
+            } else {
+                $status = 'not_taken';
+            }
+
+            $curriculum[] = [
+                'course_id' => $course->id,
+                'code' => $course->code,
+                'name' => $course->name,
+                'credits' => $course->credits,
+                'level' => $course->level,
+                'semester' => $course->semester,
+                'course_type' => $course->course_type ?? null,
+                'status' => $status,
+                'grade' => $grade ? [
+                    'final_grade' => $grade->final_grade,
+                    'letter_grade' => $grade->letter_grade,
+                    'validated_at' => $grade->validated_at ?? null,
+                ] : null,
+            ];
+        }
+
+        // -------------------- Finance (by academic year) --------------------
+        $fees = StudentFee::with(['feeType', 'payments'])
+            ->where('student_id', $student->id)
+            ->orderBy('academic_year')
+            ->orderBy('due_date')
+            ->get();
+
+        $completedTransactions = Transaction::where('student_id', $student->id)
+            ->where('status', 'completed')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        $transactionsByYear = [];
+        foreach ($completedTransactions as $tx) {
+            $year = $this->academicYearFromDate($tx->created_at);
+            $transactionsByYear[$year][] = [
+                'id' => $tx->id,
+                'reference' => $tx->reference,
+                'amount' => (float) $tx->amount,
+                'payment_method' => $tx->payment_method,
+                'created_at' => $tx->created_at?->toIso8601String(),
+            ];
+        }
+
+        $years = [];
+        foreach ($fees->groupBy('academic_year') as $academicYear => $yearFees) {
+            $total = (float) $yearFees->sum('amount');
+            $paid = (float) $yearFees->sum('paid_amount');
+            $balance = max(0, $total - $paid);
+
+            $years[] = [
+                'academic_year' => $academicYear,
+                'summary' => [
+                    'total' => $total,
+                    'paid' => $paid,
+                    'balance' => $balance,
+                ],
+                'fees' => $yearFees->map(function ($fee) {
+                    $amount = (float) $fee->amount;
+                    $paid = (float) $fee->paid_amount;
+                    return [
+                        'id' => $fee->id,
+                        'fee_type' => $fee->feeType?->name,
+                        'amount' => $amount,
+                        'paid' => $paid,
+                        'balance' => max(0, $amount - $paid),
+                        'due_date' => $fee->due_date?->format('Y-m-d'),
+                        'status' => $fee->status,
+                        'payments' => $fee->payments?->map(function ($p) {
+                            return [
+                                'id' => $p->id,
+                                'reference_number' => $p->reference_number,
+                                'amount' => (float) $p->amount,
+                                'payment_method' => $p->payment_method,
+                                'payment_date' => $p->payment_date?->format('Y-m-d'),
+                            ];
+                        })->values() ?? [],
+                    ];
+                })->values(),
+                'transactions' => $transactionsByYear[$academicYear] ?? [],
+            ];
+        }
+
+        return [
+            'generated_at' => now()->toIso8601String(),
+            'student' => [
+                'id' => $student->id,
+                'student_id' => $student->student_id,
+                'full_name' => $student->user?->full_name ?? trim(($student->user?->first_name ?? '') . ' ' . ($student->user?->last_name ?? '')),
+                'email' => $student->user?->email,
+                'department' => $student->department?->name,
+                'faculty' => $student->department?->faculty?->name,
+                'level' => $student->level,
+                'current_semester' => $student->current_semester ?? null,
+                'status' => $student->status,
+            ],
+            'academic' => [
+                'programme_courses_count' => $allProgrammeCourses->count(),
+                'curriculum' => $curriculum,
+            ],
+            'finance' => [
+                'years' => $years,
+            ],
+        ];
+    }
+
+    // ==================== STUDENT REPORT SHEETS (2 separate files) ====================
+
+    public function viewStudentAcademicSheet(int $id)
+    {
+        return $this->viewSheet($id, 'academic');
+    }
+
+    public function downloadStudentAcademicSheet(int $id)
+    {
+        return $this->downloadSheet($id, 'academic');
+    }
+
+    public function viewStudentFinancialSheet(int $id)
+    {
+        return $this->viewSheet($id, 'financial');
+    }
+
+    public function downloadStudentFinancialSheet(int $id)
+    {
+        return $this->downloadSheet($id, 'financial');
+    }
+
+    private function viewSheet(int $id, string $type)
+    {
+        $html = $this->renderStudentSheetHtml($id, $type);
+        return response($html, 200, [
+            'Content-Type' => 'text/html; charset=utf-8',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate',
+            'Pragma' => 'no-cache',
+        ]);
+    }
+
+    private function downloadSheet(int $id, string $type)
+    {
+        $payload = $this->buildStudentReportPayload($id);
+        $html = $this->renderStudentSheetHtml($id, $type);
+        $sid = $payload['student']['student_id'] ?? $id;
+        $filename = "student-{$type}-sheet-{$sid}.html";
+
+        return response($html, 200, [
+            'Content-Type' => 'text/html; charset=utf-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate',
+            'Pragma' => 'no-cache',
+        ]);
+    }
+
+    private function renderStudentSheetHtml(int $id, string $type): string
+    {
+        $payload = $this->buildStudentReportPayload($id);
+
+        $logoDataUri = null;
+        $logoPath = public_path('esl-logo.png');
+        if (file_exists($logoPath)) {
+            $logoDataUri = 'data:image/png;base64,' . base64_encode(file_get_contents($logoPath));
+        }
+
+        $universityName = config('app.name', 'École de Santé de Libreville');
+
+        $view = $type === 'financial'
+            ? 'reports.student_financial_sheet'
+            : 'reports.student_academic_sheet';
+
+        return view($view, [
+            'payload' => $payload,
+            'logoDataUri' => $logoDataUri,
+            'universityName' => $universityName,
+        ])->render();
     }
 
     // ==================== GRADE MANAGEMENT ====================
