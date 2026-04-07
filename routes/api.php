@@ -44,6 +44,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // --- Notifications (all authenticated users) ---
     Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::delete('/notifications/all', [NotificationController::class, 'destroyAll']);
+    Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
 
     // --- Settings (all authenticated users) ---
     Route::prefix('settings')->group(function () {

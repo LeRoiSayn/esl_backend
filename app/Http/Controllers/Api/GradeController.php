@@ -249,9 +249,14 @@ class GradeController extends Controller
                     ->first();
 
                 $submitted = $latestSubmission !== null;
+
+                // Determine status, with fallback: if ALL enrolled students are graded
+                // but no submission notification exists (e.g. seeded data), treat as submitted.
+                $allGraded = $totalEnrolled > 0 && $graded >= $totalEnrolled;
+
                 $status = 'pending'; // not yet submitted
-                if ($submitted) {
-                    $status = 'submitted'; // submitted, awaiting review
+                if ($submitted || $allGraded) {
+                    $status = 'submitted'; // submitted (explicit or implicit), awaiting review
                 }
                 if ($latestValidation) {
                     if (!$latestSubmission || $latestValidation->created_at->gte($latestSubmission->created_at)) {
@@ -271,7 +276,7 @@ class GradeController extends Controller
                     'teacher_id'    => $class->teacher_id,
                     'total_enrolled'=> $totalEnrolled,
                     'graded'        => $graded,
-                    'submitted'     => $submitted,
+                    'submitted'     => $submitted || $allGraded,
                     'status'        => $status,
                     'rejection_reason' => ($status === 'rejected' && $latestValidation)
                         ? ($latestValidation->data['reason'] ?? null)

@@ -67,6 +67,35 @@ class NotificationController extends Controller
         return response()->json($result);
     }
 
+    /**
+     * Delete a single persistent notification (DB-stored, id = numeric).
+     */
+    public function destroy(Request $request, int $id)
+    {
+        $deleted = \App\Models\Notification::where('id', $id)
+            ->where('user_id', $request->user()->id)
+            ->delete();
+
+        if (!$deleted) {
+            return response()->json(['message' => 'Notification introuvable.'], 404);
+        }
+
+        \Illuminate\Support\Facades\Cache::forget("notifications_user_{$request->user()->id}");
+
+        return response()->json(['message' => 'Notification supprimée.']);
+    }
+
+    /**
+     * Delete all persistent notifications for the authenticated user.
+     */
+    public function destroyAll(Request $request)
+    {
+        \App\Models\Notification::where('user_id', $request->user()->id)->delete();
+        \Illuminate\Support\Facades\Cache::forget("notifications_user_{$request->user()->id}");
+
+        return response()->json(['message' => 'Toutes les notifications ont été supprimées.']);
+    }
+
     // ==================== STUDENT NOTIFICATIONS ====================
 
     private function getStudentNotifications($user)
