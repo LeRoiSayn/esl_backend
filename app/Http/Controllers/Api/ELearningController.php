@@ -96,9 +96,11 @@ class ELearningController extends Controller
     {
         $teacher = $this->getTeacher($request);
         
-        $courses = OnlineCourse::with(['course', 'attendance'])
+        $courses = OnlineCourse::with(['course'])
+            ->withCount('attendance')
             ->where('teacher_id', $teacher->id)
             ->orderBy('scheduled_at', 'desc')
+            ->orderBy('id', 'desc')
             ->get();
 
         return response()->json(['courses' => $courses]);
@@ -133,6 +135,8 @@ class ELearningController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'external_url' => 'required|url',
+            'scheduled_at' => 'nullable|date',
+            'duration_minutes' => 'nullable|integer|min:1|max:600',
         ]);
 
         $teacher = $this->getTeacher($request);
@@ -154,15 +158,63 @@ class ELearningController extends Controller
             'type' => 'live',
             'meeting_url' => $request->external_url,
             'meeting_id' => null,
-            'scheduled_at' => null,
+            'scheduled_at' => $request->scheduled_at,
             'duration_minutes' => $request->duration_minutes ?? 60,
             'status' => 'scheduled',
         ]);
+
+        $onlineCourse->load(['course']);
+        $onlineCourse->loadCount('attendance');
 
         return response()->json([
             'message' => 'Cours en ligne créé avec succès',
             'course' => $onlineCourse,
         ], 201);
+    }
+
+    /**
+     * Teacher: attendance report for an online session (participants list).
+     */
+    public function onlineCourseAttendanceReport(Request $request, $id)
+    {
+        $teacher = $this->getTeacher($request);
+        $session = OnlineCourse::with(['course', 'attendance.student.user'])
+            ->findOrFail($id);
+
+        if ($session->teacher_id !== $teacher->id) {
+            return response()->json(['error' => 'Accès refusé'], 403);
+        }
+
+        $attendees = $session->attendance->map(function ($row) {
+            $student = $row->student;
+            $user = $student?->user;
+
+            return [
+                'id' => $row->id,
+                'joined_at' => $row->joined_at,
+                'left_at' => $row->left_at,
+                'duration_minutes' => $row->duration_minutes,
+                'student' => [
+                    'id' => $student->id,
+                    'name' => trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')),
+                    'student_id' => $student->student_id,
+                ],
+            ];
+        })->values();
+
+        return response()->json([
+            'session' => [
+                'id' => $session->id,
+                'title' => $session->title,
+                'description' => $session->description,
+                'scheduled_at' => $session->scheduled_at,
+                'duration_minutes' => $session->duration_minutes,
+                'status' => $session->status,
+                'course_name' => $session->course->name ?? null,
+            ],
+            'attendees' => $attendees,
+            'attendee_count' => $attendees->count(),
+        ]);
     }
 
     /**
@@ -229,7 +281,7 @@ class ELearningController extends Controller
         return response()->json([
             'message'     => 'Session démarrée',
             'meeting_url' => $course->meeting_url,
-            'course'      => $course->fresh(),
+            'course'      => $course->fresh()->loadCount('attendance'),
         ]);
     }
 
@@ -253,7 +305,7 @@ class ELearningController extends Controller
 
         return response()->json([
             'message' => 'Session terminée',
-            'course'  => $course->fresh(),
+            'course'  => $course->fresh()->loadCount('attendance'),
         ]);
     }
 
@@ -285,7 +337,7 @@ class ELearningController extends Controller
             'duration_minutes' => $request->duration_minutes,
         ], fn($v) => !is_null($v)));
 
-        return response()->json(['course' => $course->fresh()]);
+        return response()->json(['course' => $course->fresh()->loadCount('attendance')]);
     }
 
     // ==================== COURSE MATERIALS ====================

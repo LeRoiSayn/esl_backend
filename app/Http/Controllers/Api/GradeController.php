@@ -81,6 +81,10 @@ class GradeController extends Controller
 
     public function update(Request $request, Grade $grade)
     {
+        if ($grade->validated_at !== null) {
+            return $this->error('Cette note est validée et ne peut plus être modifiée.', 422);
+        }
+
         $request->validate([
             'attendance_score'      => 'nullable|numeric|min:0|max:10',
             'quiz_score'            => 'nullable|numeric|min:0|max:20',
@@ -144,7 +148,14 @@ class GradeController extends Controller
         ]);
 
         $updated = 0;
+        $skippedValidated = 0;
         foreach ($request->grades as $gradeData) {
+            $existing = Grade::where('enrollment_id', $gradeData['enrollment_id'])->first();
+            if ($existing && $existing->validated_at !== null) {
+                $skippedValidated++;
+                continue;
+            }
+
             $attendance = (float)($gradeData['attendance_score']  ?? 0);
             $quiz       = (float)($gradeData['quiz_score']        ?? 0);
             $ca         = (float)($gradeData['continuous_assessment'] ?? 0);
@@ -168,9 +179,12 @@ class GradeController extends Controller
             $updated++;
         }
 
-        ActivityLog::log('bulk_update', "Bulk updated {$updated} grades");
+        ActivityLog::log('bulk_update', "Bulk updated {$updated} grades (skipped {$skippedValidated} validated)");
 
-        return $this->success(['updated' => $updated], "Updated {$updated} grades successfully");
+        return $this->success([
+            'updated' => $updated,
+            'skipped_validated' => $skippedValidated,
+        ], "Updated {$updated} grades successfully");
     }
 
     /**
@@ -189,6 +203,17 @@ class GradeController extends Controller
 
         $gradedCount = Grade::whereHas('enrollment', fn($q) => $q->where('class_id', $classId))->count();
         $totalCount  = \App\Models\Enrollment::where('class_id', $classId)->where('status', 'enrolled')->count();
+
+        $hasUnvalidated = Grade::whereHas('enrollment', fn($q) => $q->where('class_id', $classId))
+            ->whereNull('validated_at')
+            ->exists();
+
+        if (!$hasUnvalidated) {
+            return $this->error(
+                'Toutes les notes saisies pour cette classe sont déjà validées. Aucune nouvelle soumission n\'est nécessaire.',
+                422
+            );
+        }
 
         $teacherName = trim(($teacher->user->first_name ?? '') . ' ' . ($teacher->user->last_name ?? ''));
         $courseName  = $class->course->name ?? 'Cours ' . $classId;
