@@ -52,6 +52,8 @@ COPY . .
 RUN composer dump-autoload --optimize --classmap-authoritative --no-dev \
     && php artisan package:discover --ansi --no-interaction || true
 
+RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache
+
 RUN chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
