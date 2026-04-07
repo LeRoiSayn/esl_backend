@@ -7,17 +7,36 @@
     <style>
       body { font-family: DejaVu Sans, Arial, sans-serif; color: #111827; }
       .sheet { width: 100%; margin: 0 auto; padding: 24px; }
-      .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 2px solid #e5e7eb; padding-bottom: 12px; margin-bottom: 16px; }
+      /* Header */
+      .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 2px solid #e5e7eb; padding-bottom: 14px; margin-bottom: 18px; }
       .uni { display: flex; align-items: center; gap: 12px; }
       .logo { width: 72px; height: 72px; object-fit: contain; }
-      .uni-name { font-size: 16px; font-weight: 700; }
-      .doc-title { font-size: 14px; font-weight: 700; margin-top: 2px; }
-      .meta { font-size: 12px; }
+      .uni-name { font-size: 16px; font-weight: 700; color: #111827; }
+      .doc-title { font-size: 13px; font-weight: 700; color: #269c6d; margin-top: 3px; }
+      .meta { font-size: 11px; color: #374151; text-align: right; line-height: 1.7; }
+      /* Section headings */
+      .section-title { margin: 18px 0 12px; font-size: 13px; font-weight: 800; color: #111827; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px; }
+      /* Curriculum tables */
       table { width: 100%; border-collapse: collapse; }
-      th, td { border: 1px solid #e5e7eb; padding: 8px; font-size: 12px; vertical-align: top; }
-      th { background: #f9fafb; font-weight: 700; }
-      .section-title { margin: 18px 0 10px; font-size: 13px; font-weight: 800; }
-      .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; border: 1px solid #e5e7eb; }
+      th { background: #f9fafb; color: #111827; padding: 7px 8px; text-align: left; font-size: 10px; font-weight: 700; border: 1px solid #e5e7eb; }
+      th.num { text-align: right; }
+      td { padding: 6px 8px; border: 1px solid #e5e7eb; font-size: 11px; color: #111827; }
+      td.num { text-align: right; }
+      tr:nth-child(even) td { background: #f9fafb; }
+      .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; border: 1px solid #e5e7eb; }
+      /* Year box (financial section) */
+      .year-box { border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 18px; overflow: hidden; }
+      .year-hdr { padding: 9px 14px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
+      .year-hdr-title { font-size: 13px; font-weight: 700; color: #111827; }
+      .year-summary { display: flex; border-bottom: 1px solid #e5e7eb; }
+      .summary-cell { flex: 1; padding: 9px 14px; border-right: 1px solid #e5e7eb; }
+      .summary-cell:last-child { border-right: none; }
+      .summary-lbl { font-size: 9px; color: #6b7280; text-transform: uppercase; letter-spacing: .05em; }
+      .summary-val { font-size: 13px; font-weight: 700; margin-top: 3px; }
+      .pill-g { background: #f0fdf4; color: #15803d; border-color: #86efac; }
+      .pill-y { background: #fefce8; color: #a16207; border-color: #fde047; }
+      .pill-r { background: #fef2f2; color: #b91c1c; border-color: #fca5a5; }
+      .tx-hdr { padding: 7px 14px; background: #f9fafb; border-top: 1px solid #e5e7eb; font-size: 10px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: .05em; }
       .page-break { page-break-before: always; margin-top: 24px; }
       @media print {
         body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -140,62 +159,82 @@
         </div>
       </div>
 
-      <div class="section-title">Fees & Payments Summary</div>
+      <div class="section-title">Frais &amp; Paiements par Année Académique</div>
 
       @if(empty($financeYears))
-        <div style="font-size: 12px; color: #6b7280;">No financial data.</div>
+        <div style="font-size: 12px; color: #6b7280;">Aucune donnée financière.</div>
       @else
         @foreach($financeYears as $year)
-          <div style="margin-top: 14px;">
-            <div style="font-weight: 800; margin-bottom: 6px;">Academic Year: {{ $year['academic_year'] ?? '' }}</div>
-            <div style="font-size: 12px; margin-bottom: 10px; color: #374151;">
-              Total: {{ number_format($year['summary']['total'] ?? 0) }} FCFA
-              • Paid: {{ number_format($year['summary']['paid'] ?? 0) }} FCFA
-              • Balance: {{ number_format($year['summary']['balance'] ?? 0) }} FCFA
+          @php
+            $total   = $year['summary']['total']   ?? 0;
+            $paid    = $year['summary']['paid']     ?? 0;
+            $balance = $year['summary']['balance']  ?? 0;
+          @endphp
+          <div class="year-box">
+            <div class="year-hdr">
+              <div class="year-hdr-title">Année académique : {{ $year['academic_year'] ?? '' }}</div>
+            </div>
+            <div class="year-summary">
+              <div class="summary-cell">
+                <div class="summary-lbl">Total dû</div>
+                <div class="summary-val">{{ number_format($total) }} FCFA</div>
+              </div>
+              <div class="summary-cell">
+                <div class="summary-lbl">Payé</div>
+                <div class="summary-val" style="color:#15803d">{{ number_format($paid) }} FCFA</div>
+              </div>
+              <div class="summary-cell">
+                <div class="summary-lbl">Solde restant</div>
+                <div class="summary-val" style="color:{{ $balance > 0 ? '#b91c1c' : '#15803d' }}">{{ number_format($balance) }} FCFA</div>
+              </div>
             </div>
             <table>
               <thead>
                 <tr>
-                  <th>Fee</th>
-                  <th style="width: 120px;">Amount</th>
-                  <th style="width: 120px;">Paid</th>
-                  <th style="width: 120px;">Balance</th>
-                  <th style="width: 110px;">Due</th>
-                  <th style="width: 90px;">Status</th>
+                  <th>Frais</th>
+                  <th class="num" style="width:130px;">Montant</th>
+                  <th class="num" style="width:130px;">Payé</th>
+                  <th class="num" style="width:130px;">Solde</th>
+                  <th style="width:110px;">Échéance</th>
+                  <th style="width:90px;">Statut</th>
                 </tr>
               </thead>
               <tbody>
                 @foreach(($year['fees'] ?? []) as $f)
+                  @php
+                    $st  = $f['status'] ?? '';
+                    $cls = $st === 'paid' ? 'pill-g' : ($st === 'partial' ? 'pill-y' : 'pill-r');
+                    $lbl = $st === 'paid' ? 'Payé' : ($st === 'partial' ? 'Partiel' : ucfirst($st));
+                  @endphp
                   <tr>
                     <td>{{ $f['fee_type'] ?? '' }}</td>
-                    <td>{{ number_format($f['amount'] ?? 0) }} FCFA</td>
-                    <td>{{ number_format($f['paid'] ?? 0) }} FCFA</td>
-                    <td>{{ number_format($f['balance'] ?? 0) }} FCFA</td>
-                    <td>{{ $f['due_date'] ?? '' }}</td>
-                    <td>{{ $f['status'] ?? '' }}</td>
+                    <td class="num">{{ number_format($f['amount'] ?? 0) }} FCFA</td>
+                    <td class="num" style="color:#15803d">{{ number_format($f['paid'] ?? 0) }} FCFA</td>
+                    <td class="num" style="font-weight:600;color:{{ ($f['balance'] ?? 0) > 0 ? '#b91c1c' : '#15803d' }}">{{ number_format($f['balance'] ?? 0) }} FCFA</td>
+                    <td>{{ $f['due_date'] ?? '—' }}</td>
+                    <td><span class="pill {{ $cls }}">{{ $lbl }}</span></td>
                   </tr>
                 @endforeach
               </tbody>
             </table>
-
             @if(!empty($year['transactions']))
-              <div style="margin-top: 10px; font-weight: 700; font-size: 12px;">Online Transactions</div>
-              <table style="margin-top: 6px;">
+              <div class="tx-hdr">Transactions enregistrées</div>
+              <table>
                 <thead>
                   <tr>
-                    <th>Reference</th>
-                    <th>Method</th>
-                    <th style="width: 120px;">Amount</th>
-                    <th style="width: 160px;">Date</th>
+                    <th>Référence</th>
+                    <th>Méthode</th>
+                    <th class="num" style="width:130px;">Montant</th>
+                    <th style="width:160px;">Date</th>
                   </tr>
                 </thead>
                 <tbody>
                   @foreach(($year['transactions'] ?? []) as $tx)
                     <tr>
-                      <td style="font-family: monospace;">{{ $tx['reference'] ?? '' }}</td>
+                      <td style="font-family: monospace; font-size: 10px;">{{ $tx['reference'] ?? '' }}</td>
                       <td>{{ $tx['payment_method'] ?? '' }}</td>
-                      <td>{{ number_format($tx['amount'] ?? 0) }} FCFA</td>
-                      <td>{{ $tx['created_at'] ?? '' }}</td>
+                      <td class="num" style="color:#15803d;font-weight:600">{{ number_format($tx['amount'] ?? 0) }} FCFA</td>
+                      <td style="color:#6b7280">{{ $tx['created_at'] ?? '' }}</td>
                     </tr>
                   @endforeach
                 </tbody>

@@ -12,6 +12,7 @@ use App\Models\Schedule;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 
 class TeacherController extends Controller
 {
@@ -127,6 +128,8 @@ class TeacherController extends Controller
         $request->validate([
             'first_name' => 'sometimes|string|max:255',
             'last_name' => 'sometimes|string|max:255',
+            'email' => ['sometimes', 'email', Rule::unique('users', 'email')->ignore($teacher->user_id)],
+            'username' => ['sometimes', 'string', 'max:100', Rule::unique('users', 'username')->ignore($teacher->user_id)],
             'phone' => 'nullable|string|max:20',
             'address' => 'nullable|string',
             'date_of_birth' => 'nullable|date',
@@ -142,7 +145,7 @@ class TeacherController extends Controller
         DB::beginTransaction();
         try {
             // Update user
-            $userFields = $request->only(['first_name', 'last_name', 'phone', 'address', 'date_of_birth', 'gender']);
+            $userFields = $request->only(['first_name', 'last_name', 'email', 'username', 'phone', 'address', 'date_of_birth', 'gender']);
             if (!empty($request->password)) {
                 $userFields['password'] = Hash::make($request->password);
             }
