@@ -14,6 +14,7 @@ use App\Models\Grade;
 use App\Models\Schedule;
 use App\Models\FeeType;
 use App\Models\StudentFee;
+use App\Models\Notification;
 use App\Models\Payment;
 use Carbon\Carbon;
 
@@ -37,6 +38,9 @@ class FullTestDataSeeder extends Seeder
 
         $this->command->info('→ Creating historical fees for L2/L3 students...');
         $this->seedHistoricalFinance();
+
+        $this->command->info('→ Simulating grade submissions for complete classes...');
+        $this->seedGradeSubmissions();
 
         $this->command->info('✓ Full test data seeded.');
     }
@@ -659,5 +663,86 @@ class FullTestDataSeeder extends Seeder
             ];
         }
         return ['months' => $months, 'monthly_amount' => $monthly, 'tranches' => $tranches];
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 6. GRADE SUBMISSIONS (simulate teacher submit for fully-graded classes)
+    // ──────────────────────────────────────────────────────────────────────────
+    /**
+     * For every active class where ALL enrolled students have a grade record,
+     * create a grades_submitted notification so the admin can see them as
+     * "Soumis" and validate them.  Classes with missing grades stay "En attente".
+     */
+    private function seedGradeSubmissions(): void
+    {
+        $adminUser = User::where('role', 'admin')->first();
+        $adminId   = $adminUser?->id ?? 1;
+
+        $classes = ClassModel::with(['course', 'teacher.user'])
+            ->where('is_active', true)
+            ->get();
+
+        foreach ($classes as $class) {
+            $totalEnrolled = Enrollment::where('class_id', $class->id)
+                ->where('status', 'enrolled')
+                ->count();
+
+            if ($totalEnrolled === 0) continue;
+
+            $graded = Grade::whereHas(
+                'enrollment',
+                fn($q) => $q->where('class_id', $class->id)
+            )->count();
+
+            // Only submit if ALL enrolled students have a grade
+            if ($graded < $totalEnrolled) continue;
+
+            // Skip if a submission notification already exists for this class
+            $alreadySubmitted = Notification::where('type', 'grades_submitted')
+                ->whereJsonContains('data->class_id', $class->id)
+                ->exists();
+
+            if ($alreadySubmitted) continue;
+
+            $courseName = $class->course?->name ?? ('Cours ' . $class->id);
+            $teacherId  = $class->teacher?->user?->id ?? $adminId;
+            $submittedAt = Carbon::now()->subWeeks(2);
+
+            // Notification to admin
+            Notification::create([
+                'user_id'    => $adminId,
+                'type'       => 'grades_submitted',
+                'title'      => 'Notes soumises',
+                'message'    => "Les notes de {$courseName} ont été soumises et sont en attente de validation.",
+                'link'       => '/admin/grades',
+                'read_at'    => null,
+                'created_at' => $submittedAt,
+                'updated_at' => $submittedAt,
+                'data'       => [
+                    'class_id'    => $class->id,
+                    'course_name' => $courseName,
+                    'submitted_by'=> $teacherId,
+                ],
+            ]);
+
+            // Notification to teacher (for their notification feed)
+            if ($teacherId !== $adminId) {
+                Notification::create([
+                    'user_id'    => $teacherId,
+                    'type'       => 'grades_submitted',
+                    'title'      => 'Notes soumises',
+                    'message'    => "Vous avez soumis les notes de {$courseName} à l'administration.",
+                    'link'       => '/teacher/grades',
+                    'read_at'    => $submittedAt, // already read by teacher
+                    'created_at' => $submittedAt,
+                    'updated_at' => $submittedAt,
+                    'data'       => [
+                        'class_id'    => $class->id,
+                        'course_name' => $courseName,
+                        'submitted_by'=> $teacherId,
+                    ],
+                ]);
+            }
+        }
     }
 }
