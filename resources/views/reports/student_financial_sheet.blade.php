@@ -5,17 +5,18 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Financial Sheet</title>
     <style>
-      body { font-family: DejaVu Sans, Arial, sans-serif; color: #111827; }
-      .sheet { width: 100%; margin: 0 auto; padding: 24px; }
+      body { font-family: DejaVu Sans, Arial, sans-serif; color: #111827; background: #f3f4f6; margin: 0; padding: 0; }
+      .sheet { max-width: 900px; margin: 0 auto; background: #fff; padding: 32px 36px 40px; }
       /* Header */
-      .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 2px solid #e5e7eb; padding-bottom: 14px; margin-bottom: 18px; }
-      .uni { display: flex; align-items: center; gap: 12px; }
-      .logo { width: 72px; height: 72px; object-fit: contain; }
-      .uni-name { font-size: 16px; font-weight: 700; color: #111827; }
-      .doc-title { font-size: 13px; font-weight: 700; color: #269c6d; margin-top: 3px; }
-      .meta { font-size: 11px; color: #374151; text-align: right; line-height: 1.7; }
+      .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 2px solid #e5e7eb; padding-bottom: 18px; margin-bottom: 22px; }
+      .uni { display: flex; align-items: center; gap: 14px; }
+      .logo { width: 64px; height: 64px; object-fit: contain; flex-shrink: 0; }
+      .uni-name { font-size: 16px; font-weight: 700; color: #111827; line-height: 1.2; }
+      .doc-title { font-size: 12px; font-weight: 700; color: #269c6d; margin-top: 4px; }
+      .doc-sub { font-size: 10px; color: #6b7280; margin-top: 2px; }
+      .meta { font-size: 11px; color: #374151; text-align: right; line-height: 1.8; white-space: nowrap; }
       /* Section heading */
-      .section-title { margin: 18px 0 12px; font-size: 13px; font-weight: 800; color: #111827; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px; }
+      .section-title { margin: 22px 0 12px; font-size: 11px; font-weight: 700; color: #374151; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; text-transform: uppercase; letter-spacing: .05em; }
       /* Year box */
       .year-box { border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 18px; overflow: hidden; }
       .year-hdr { padding: 9px 14px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
@@ -41,7 +42,10 @@
       /* Transactions sub-section */
       .tx-hdr { padding: 7px 14px; background: #f9fafb; border-top: 1px solid #e5e7eb; font-size: 10px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: .05em; }
       .footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 9px; color: #9ca3af; }
-      @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+      @media print {
+        body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .sheet { margin: 0; padding: 24px 28px; max-width: 100%; }
+      }
     </style>
   </head>
   <body>
@@ -54,19 +58,19 @@
       <div class="header">
         <div class="uni">
           @if($logoDataUri)
-            <img class="logo" src="{{ $logoDataUri }}" alt="University Logo" />
+            <img class="logo" src="{{ $logoDataUri }}" alt="ESL" />
           @endif
           <div>
             <div class="uni-name">{{ $universityName }}</div>
             <div class="doc-title">Relevé Financier — par Année Académique</div>
+            <div class="doc-sub">Document officiel généré le {{ $payload['generated_at'] ?? '' }}</div>
           </div>
         </div>
         <div class="meta">
-          <div><strong>Étudiant :</strong> {{ $student['full_name'] ?? 'N/A' }}</div>
-          <div><strong>Matricule :</strong> {{ $student['student_id'] ?? 'N/A' }}</div>
-          <div><strong>Département :</strong> {{ $student['department'] ?? 'N/A' }}</div>
-          <div><strong>Niveau :</strong> {{ $student['level'] ?? 'N/A' }}</div>
-          <div><strong>Généré le :</strong> {{ $payload['generated_at'] ?? '' }}</div>
+          <div><strong>{{ $student['full_name'] ?? 'N/A' }}</strong></div>
+          <div>Matricule : {{ $student['student_id'] ?? 'N/A' }}</div>
+          <div>{{ $student['department'] ?? 'N/A' }}</div>
+          <div>Niveau : {{ $student['level'] ?? 'N/A' }}</div>
         </div>
       </div>
 
