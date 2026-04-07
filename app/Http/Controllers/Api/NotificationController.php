@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Student;
 use App\Models\StudentFee;
+use Illuminate\Support\Facades\DB;
 use App\Models\ClassModel;
 use App\Models\Enrollment;
 use App\Models\Course;
@@ -22,39 +23,48 @@ class NotificationController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $notifications = [];
 
-        switch ($user->role) {
-            case 'student':
-                $notifications = $this->getStudentNotifications($user);
-                break;
-            case 'teacher':
-                $notifications = $this->getTeacherNotifications($user);
-                break;
-            case 'admin':
-                $notifications = $this->getAdminNotifications($user);
-                break;
-            case 'finance':
-                $notifications = $this->getFinanceNotifications($user);
-                break;
-            case 'registrar':
-                $notifications = $this->getRegistrarNotifications($user);
-                break;
-        }
+        $result = \Illuminate\Support\Facades\Cache::remember(
+            "notifications_user_{$user->id}",
+            90, // 90 seconds — longer than the 60s frontend poll, so the second poll is always a cache hit
+            function () use ($user) {
+                $notifications = [];
 
-        // Sort by priority (high first) then by date (newest first)
-        usort($notifications, function ($a, $b) {
-            $priorityOrder = ['high' => 0, 'medium' => 1, 'low' => 2];
-            $pa = $priorityOrder[$a['priority']] ?? 2;
-            $pb = $priorityOrder[$b['priority']] ?? 2;
-            if ($pa !== $pb) return $pa - $pb;
-            return strtotime($b['date']) - strtotime($a['date']);
-        });
+                switch ($user->role) {
+                    case 'student':
+                        $notifications = $this->getStudentNotifications($user);
+                        break;
+                    case 'teacher':
+                        $notifications = $this->getTeacherNotifications($user);
+                        break;
+                    case 'admin':
+                        $notifications = $this->getAdminNotifications($user);
+                        break;
+                    case 'finance':
+                        $notifications = $this->getFinanceNotifications($user);
+                        break;
+                    case 'registrar':
+                        $notifications = $this->getRegistrarNotifications($user);
+                        break;
+                }
 
-        return response()->json([
-            'notifications' => array_slice($notifications, 0, 20),
-            'unread_count' => count(array_filter($notifications, fn($n) => !($n['read'] ?? false))),
-        ]);
+                // Sort by priority (high first) then by date (newest first)
+                usort($notifications, function ($a, $b) {
+                    $priorityOrder = ['high' => 0, 'medium' => 1, 'low' => 2];
+                    $pa = $priorityOrder[$a['priority']] ?? 2;
+                    $pb = $priorityOrder[$b['priority']] ?? 2;
+                    if ($pa !== $pb) return $pa - $pb;
+                    return strtotime($b['date']) - strtotime($a['date']);
+                });
+
+                return [
+                    'notifications' => array_slice($notifications, 0, 20),
+                    'unread_count'  => count(array_filter($notifications, fn($n) => !($n['read'] ?? false))),
+                ];
+            }
+        );
+
+        return response()->json($result);
     }
 
     // ==================== STUDENT NOTIFICATIONS ====================
@@ -312,14 +322,13 @@ class NotificationController extends Controller
 
         $notifications = [];
 
-        // 1. Get teacher's classes
-        $classIds = ClassModel::where('teacher_id', $teacher->id)
+        // 1. Get teacher's classes (single query — both id and course_id)
+        $teacherClasses = ClassModel::where('teacher_id', $teacher->id)
             ->where('is_active', true)
-            ->pluck('id');
+            ->get(['id', 'course_id']);
 
-        $courseIds = ClassModel::where('teacher_id', $teacher->id)
-            ->where('is_active', true)
-            ->pluck('course_id');
+        $classIds  = $teacherClasses->pluck('id');
+        $courseIds = $teacherClasses->pluck('course_id');
 
         // 2. Pending assignment submissions to review
         $pendingSubmissions = \App\Models\AssignmentSubmission::whereHas('assignment', function ($q) use ($courseIds) {
@@ -474,9 +483,14 @@ class NotificationController extends Controller
             ];
         }
 
-        // 4. Recent payments today
-        $todayPayments = Payment::whereDate('payment_date', today())->count();
-        $todayAmount = Payment::whereDate('payment_date', today())->sum('amount');
+        // 4. Recent payments today (single query with conditional aggregation)
+        $todayRow = DB::selectOne("
+            SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total
+            FROM payments
+            WHERE payment_date::date = CURRENT_DATE
+        ");
+        $todayPayments = (int) ($todayRow->cnt ?? 0);
+        $todayAmount   = (float) ($todayRow->total ?? 0);
 
         if ($todayPayments > 0) {
             $notifications[] = [
@@ -538,11 +552,14 @@ class NotificationController extends Controller
     {
         $notifications = [];
 
-        // 1. Overdue student fees
-        $overdueCount = StudentFee::where('status', 'overdue')->count();
-        $overdueAmount = StudentFee::where('status', 'overdue')
-            ->selectRaw('SUM(amount - paid_amount) as total_balance')
-            ->value('total_balance') ?? 0;
+        // 1. Overdue student fees (single query — count + balance)
+        $overdueRow = DB::selectOne("
+            SELECT COUNT(*) AS cnt, COALESCE(SUM(amount - paid_amount), 0) AS total_balance
+            FROM student_fees
+            WHERE status = 'overdue'
+        ");
+        $overdueCount  = (int)   ($overdueRow->cnt           ?? 0);
+        $overdueAmount = (float) ($overdueRow->total_balance  ?? 0);
 
         if ($overdueCount > 0) {
             $notifications[] = [
@@ -572,9 +589,14 @@ class NotificationController extends Controller
             ];
         }
 
-        // 3. Today's payments
-        $todayPayments = Payment::whereDate('payment_date', today())->count();
-        $todayAmount = Payment::whereDate('payment_date', today())->sum('amount');
+        // 3. Today's payments (single query)
+        $finTodayRow = DB::selectOne("
+            SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total
+            FROM payments
+            WHERE payment_date::date = CURRENT_DATE
+        ");
+        $todayPayments = (int)   ($finTodayRow->cnt   ?? 0);
+        $todayAmount   = (float) ($finTodayRow->total ?? 0);
 
         $notifications[] = [
             'id' => 'today_collections',

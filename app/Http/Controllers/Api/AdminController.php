@@ -95,12 +95,24 @@ class AdminController extends Controller
             ->orderBy('name')
             ->get();
 
-        // Build a lookup: course_id → enrollment (with its latest grade)
+        // Build a lookup: course_id → best enrollment (with its latest grade).
+        // A student may have multiple enrollments for the same course (failed + retake).
+        // Keep the one with the best outcome: passing grade > failing > in-progress.
         $enrolledCourseMap = [];
         foreach ($student->enrollments as $enrollment) {
             $courseId = $enrollment->class->course_id ?? null;
-            if ($courseId) {
-                $enrollment->latest_grade = $enrollment->grades->sortByDesc('created_at')->first();
+            if (!$courseId) continue;
+            $enrollment->latest_grade = $enrollment->grades->sortByDesc('created_at')->first();
+
+            $existing = $enrolledCourseMap[$courseId] ?? null;
+            if ($existing === null) {
+                $enrolledCourseMap[$courseId] = $enrollment;
+                continue;
+            }
+
+            $newGrade = (float) ($enrollment->latest_grade?->final_grade ?? -1);
+            $existGrade = (float) ($existing->latest_grade?->final_grade ?? -1);
+            if ($newGrade > $existGrade) {
                 $enrolledCourseMap[$courseId] = $enrollment;
             }
         }
@@ -369,12 +381,27 @@ class AdminController extends Controller
             ->orderBy('name')
             ->get();
 
+        // Build a map of course_id → best enrollment.
+        // A student may have multiple enrollments for the same course (e.g., failed + retake).
+        // Priority: passing grade (≥50) > failing grade > in-progress > not graded.
         $enrolledCourseMap = [];
         foreach ($student->enrollments as $enrollment) {
             $courseId = $enrollment->class->course_id ?? null;
             if (!$courseId) continue;
             $enrollment->latest_grade = $enrollment->grades->sortByDesc('created_at')->first();
-            $enrolledCourseMap[$courseId] = $enrollment;
+
+            $existing = $enrolledCourseMap[$courseId] ?? null;
+            if ($existing === null) {
+                $enrolledCourseMap[$courseId] = $enrollment;
+                continue;
+            }
+
+            // Replace existing only if the new enrollment has a strictly better grade
+            $newGrade = (float) ($enrollment->latest_grade?->final_grade ?? -1);
+            $existGrade = (float) ($existing->latest_grade?->final_grade ?? -1);
+            if ($newGrade > $existGrade) {
+                $enrolledCourseMap[$courseId] = $enrollment;
+            }
         }
 
         $curriculum = [];
@@ -520,7 +547,8 @@ class AdminController extends Controller
 
     private function viewSheet(int $id, string $type)
     {
-        $html = $this->renderStudentSheetHtml($id, $type);
+        $payload = $this->buildStudentReportPayload($id);
+        $html = $this->renderStudentSheetHtml($payload, $type);
         return response($html, 200, [
             'Content-Type' => 'text/html; charset=utf-8',
             'Cache-Control' => 'no-store, no-cache, must-revalidate',
@@ -531,7 +559,7 @@ class AdminController extends Controller
     private function downloadSheet(int $id, string $type)
     {
         $payload = $this->buildStudentReportPayload($id);
-        $html = $this->renderStudentSheetHtml($id, $type);
+        $html = $this->renderStudentSheetHtml($payload, $type);
         $sid = $payload['student']['student_id'] ?? $id;
         $filename = "student-{$type}-sheet-{$sid}.html";
 
@@ -543,10 +571,8 @@ class AdminController extends Controller
         ]);
     }
 
-    private function renderStudentSheetHtml(int $id, string $type): string
+    private function renderStudentSheetHtml(array $payload, string $type): string
     {
-        $payload = $this->buildStudentReportPayload($id);
-
         $logoDataUri = null;
         $logoPath = public_path('esl-logo.png');
         if (file_exists($logoPath)) {

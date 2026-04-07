@@ -72,12 +72,18 @@ class Student extends Model
 
     public function getAttendanceRateAttribute(): float
     {
-        $enrollmentIds = $this->enrollments->pluck('id');
-        $totalAttendance = Attendance::whereIn('enrollment_id', $enrollmentIds)->count();
-        $presentCount = Attendance::whereIn('enrollment_id', $enrollmentIds)
-            ->whereIn('status', ['present', 'late'])
-            ->count();
-        
-        return $totalAttendance > 0 ? round(($presentCount / $totalAttendance) * 100, 2) : 0;
+        // Single query via JOIN on student_id — replaces the previous 3-query pattern
+        $result = \Illuminate\Support\Facades\DB::selectOne("
+            SELECT
+                COUNT(*)                                                   AS total,
+                COUNT(*) FILTER (WHERE a.status IN ('present', 'late'))    AS present_count
+            FROM attendance a
+            INNER JOIN enrollments e ON e.id = a.enrollment_id
+            WHERE e.student_id = ?
+        ", [$this->id]);
+
+        return ($result && $result->total > 0)
+            ? round(($result->present_count / $result->total) * 100, 2)
+            : 0.0;
     }
 }

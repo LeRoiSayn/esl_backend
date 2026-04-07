@@ -15,97 +15,167 @@ use App\Models\ClassModel;
 use App\Models\Attendance;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
     public function adminStats()
     {
-        $stats = [
-            'total_students' => Student::count(),
-            'total_teachers' => Teacher::count(),
-            'total_courses' => Course::count(),
-            'total_departments' => Department::count(),
-            'total_faculties' => Faculty::count(),
-            'active_students' => Student::where('status', 'active')->count(),
-            'active_teachers' => Teacher::where('status', 'active')->count(),
-        ];
+        return $this->success(Cache::remember('dashboard:admin', now()->addSeconds(45), function () {
+            // 7 COUNTs → 2 queries using conditional aggregation (PostgreSQL FILTER syntax)
+            $studentRow = DB::selectOne("
+                SELECT COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE status = 'active') AS active
+                FROM students
+            ");
+            $teacherRow = DB::selectOne("
+                SELECT COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE status = 'active') AS active
+                FROM teachers
+            ");
+            $miscRow = DB::selectOne("
+                SELECT
+                    (SELECT COUNT(*) FROM courses)     AS total_courses,
+                    (SELECT COUNT(*) FROM departments) AS total_departments,
+                    (SELECT COUNT(*) FROM faculties)   AS total_faculties
+            ");
 
-        // Enrollment trends (last 6 months)
-        $enrollmentTrends = Student::selectRaw('DATE_FORMAT(enrollment_date, "%Y-%m") as month, COUNT(*) as count')
-            ->where('enrollment_date', '>=', now()->subMonths(6))
-            ->groupBy('month')
-            ->orderBy('month')
-            ->get();
+            $stats = [
+                'total_students'    => (int) ($studentRow->total    ?? 0),
+                'active_students'   => (int) ($studentRow->active   ?? 0),
+                'total_teachers'    => (int) ($teacherRow->total    ?? 0),
+                'active_teachers'   => (int) ($teacherRow->active   ?? 0),
+                'total_courses'     => (int) ($miscRow->total_courses     ?? 0),
+                'total_departments' => (int) ($miscRow->total_departments ?? 0),
+                'total_faculties'   => (int) ($miscRow->total_faculties   ?? 0),
+            ];
 
-        // Students by department
-        $studentsByDepartment = Department::withCount('students')
-            ->where('is_active', true)
-            ->get()
-            ->map(fn($d) => ['name' => $d->name, 'count' => $d->students_count]);
+            // Enrollment trends (last 6 months)
+            $enrollmentTrends = Student::selectRaw("TO_CHAR(enrollment_date, 'YYYY-MM') as month, COUNT(*) as count")
+                ->where('enrollment_date', '>=', now()->subMonths(6))
+                ->groupBy('month')
+                ->orderBy('month')
+                ->get();
 
-        // Students by level
-        $studentsByLevel = Student::selectRaw('level, COUNT(*) as count')
-            ->groupBy('level')
-            ->get();
+            // Students by department (avoid loading full Department models)
+            $studentsByDepartment = DB::table('departments')
+                ->leftJoin('students', 'students.department_id', '=', 'departments.id')
+                ->where('departments.is_active', true)
+                ->groupBy('departments.id', 'departments.name')
+                ->selectRaw('departments.name AS name, COUNT(students.id) AS count')
+                ->orderBy('departments.name')
+                ->get();
 
-        // Recent students
-        $recentStudents = Student::with(['user', 'department'])
-            ->latest()
-            ->take(5)
-            ->get();
+            // Students by level
+            $studentsByLevel = Student::selectRaw('level, COUNT(*) as count')
+                ->groupBy('level')
+                ->get();
 
-        return $this->success([
-            'stats' => $stats,
-            'enrollment_trends' => $enrollmentTrends,
-            'students_by_department' => $studentsByDepartment,
-            'students_by_level' => $studentsByLevel,
-            'recent_students' => $recentStudents,
-        ]);
+            // Recent students (keep payload small)
+            $recentStudents = Student::with([
+                    'user:id,first_name,last_name,email',
+                    'department:id,name',
+                ])
+                ->latest('id')
+                ->take(5)
+                ->get(['id', 'user_id', 'department_id', 'student_id', 'level', 'status', 'enrollment_date']);
+
+            return [
+                'stats' => $stats,
+                'enrollment_trends' => $enrollmentTrends,
+                'students_by_department' => $studentsByDepartment,
+                'students_by_level' => $studentsByLevel,
+                'recent_students' => $recentStudents,
+            ];
+        }));
     }
 
     public function studentStats(Request $request)
     {
-        $student = $request->user()->student;
+        $user = $request->user();
+        $student = $user->student;
 
         if (!$student) {
             return $this->error('Student profile not found', 404);
         }
 
-        $enrollments = $student->enrollments()
-            ->with(['class.course', 'class.teacher.user'])
-            ->where('status', 'enrolled')
-            ->get();
+        // Cache short-lived dashboard payload to avoid recomputing on every refresh.
+        // Keep TTL low so numbers feel "live" but performance is stable.
+        $cacheKey = "dashboard:student:{$student->id}";
 
-        $attendanceRate = $student->attendance_rate;
+        $payload = Cache::remember($cacheKey, now()->addSeconds(45), function () use ($student) {
+            // Counts & sums via aggregates (no need to load full enrollments / attendance rows)
+            $enrolledCourses = (int) $student->enrollments()
+                ->where('status', 'enrolled')
+                ->count();
 
-        $fees = $student->fees()
-            ->with('feeType')
-            ->get();
+            $creditsRow = DB::table('enrollments')
+                ->join('classes', 'enrollments.class_id', '=', 'classes.id')
+                ->join('courses', 'classes.course_id', '=', 'courses.id')
+                ->where('enrollments.student_id', $student->id)
+                ->where('enrollments.status', 'enrolled')
+                ->selectRaw('COALESCE(SUM(courses.credits), 0) AS total_credits')
+                ->first();
 
-        $pendingFees = $fees->where('status', '!=', 'paid')->sum('balance');
+            $attendanceRow = DB::table('attendance')
+                ->join('enrollments', 'attendance.enrollment_id', '=', 'enrollments.id')
+                ->where('enrollments.student_id', $student->id)
+                ->selectRaw('COUNT(*) AS total')
+                ->selectRaw("COUNT(*) FILTER (WHERE attendance.status IN ('present','late')) AS present_like")
+                ->first();
 
-        $nextFee = $fees->where('status', '!=', 'paid')
-            ->filter(fn($f) => $f->due_date !== null)
-            ->sortBy('due_date')
-            ->first();
-        $daysUntilDue = $nextFee
-            ? (int) now()->startOfDay()->diffInDays($nextFee->due_date->startOfDay(), false)
-            : null;
+            $attendanceRate = ((int) ($attendanceRow->total ?? 0)) > 0
+                ? round((((int) ($attendanceRow->present_like ?? 0)) / ((int) $attendanceRow->total)) * 100, 2)
+                : 0;
 
-        return $this->success([
-            'enrolled_courses' => $enrollments->count(),
-            'attendance_rate' => $attendanceRate,
-            'pending_fees' => $pendingFees,
-            'total_credits' => $enrollments->sum(fn($e) => $e->class->course->credits ?? 0),
-            'courses' => $enrollments,
-            'fees_summary' => [
-                'total' => $fees->sum('amount'),
-                'paid' => $fees->sum('paid_amount'),
-                'pending' => $pendingFees,
-                'next_due_date' => $nextFee?->due_date?->toDateString(),
-                'days_until_due' => $daysUntilDue,
-            ],
-        ]);
+            // Fees summary via aggregates (still load feeType list only if you need to render details)
+            $fees = $student->fees()
+                ->with('feeType')
+                ->get();
+
+            $pendingFees = (float) $fees
+                ->where('status', '!=', 'paid')
+                ->sum(fn ($f) => (float) ($f->amount - $f->paid_amount));
+
+            $nextFee = $fees->where('status', '!=', 'paid')
+                ->filter(fn ($f) => $f->due_date !== null)
+                ->sortBy('due_date')
+                ->first();
+
+            $daysUntilDue = $nextFee
+                ? (int) now()->startOfDay()->diffInDays($nextFee->due_date->startOfDay(), false)
+                : null;
+
+            // Course list: keep it small for the dashboard (avoid returning huge payloads)
+            $courses = $student->enrollments()
+                ->with([
+                    'class:id,course_id,teacher_id,section,room,academic_year,semester',
+                    'class.course:id,code,name,credits,semester,level',
+                    'class.teacher:id,user_id',
+                    'class.teacher.user:id,first_name,last_name,email',
+                ])
+                ->where('status', 'enrolled')
+                ->latest('id')
+                ->take(12)
+                ->get();
+
+            return [
+                'enrolled_courses' => $enrolledCourses,
+                'attendance_rate' => $attendanceRate,
+                'pending_fees' => $pendingFees,
+                'total_credits' => (int) ($creditsRow->total_credits ?? 0),
+                'courses' => $courses,
+                'fees_summary' => [
+                    'total' => (float) $fees->sum('amount'),
+                    'paid' => (float) $fees->sum('paid_amount'),
+                    'pending' => (float) $pendingFees,
+                    'next_due_date' => $nextFee?->due_date?->toDateString(),
+                    'days_until_due' => $daysUntilDue,
+                ],
+            ];
+        });
+
+        return $this->success($payload);
     }
 
     public function teacherStats(Request $request)
@@ -116,87 +186,131 @@ class DashboardController extends Controller
             return $this->error('Teacher profile not found', 404);
         }
 
-        $classes = $teacher->classes()
-            ->with(['course', 'enrollments'])
-            ->where('is_active', true)
-            ->get();
+        $cacheKey = "dashboard:teacher:{$teacher->id}";
 
-        $totalStudents = $classes->sum(fn($c) => $c->enrollments->where('status', 'enrolled')->count());
+        $payload = Cache::remember($cacheKey, now()->addSeconds(45), function () use ($teacher) {
+            // Avoid loading all enrollments; use withCount for enrolled students per class.
+            $classes = $teacher->classes()
+                ->where('is_active', true)
+                ->with(['course:id,code,name,credits,semester,level'])
+                ->withCount(['enrollments as enrolled_students_count' => function ($q) {
+                    $q->where('status', 'enrolled');
+                }])
+                ->orderByDesc('id')
+                ->take(20)
+                ->get(['id', 'course_id', 'teacher_id', 'section', 'room', 'academic_year', 'semester', 'capacity', 'is_active']);
 
-        return $this->success([
-            'total_classes' => $classes->count(),
-            'total_students' => $totalStudents,
-            'classes' => $classes,
-        ]);
+            $totalStudents = (int) $classes->sum('enrolled_students_count');
+
+            return [
+                'total_classes' => (int) $classes->count(),
+                'total_students' => $totalStudents,
+                'classes' => $classes,
+            ];
+        });
+
+        return $this->success($payload);
     }
 
     public function financeStats()
     {
-        $totalRevenue = Payment::sum('amount');
-        $pendingFees = StudentFee::where('status', '!=', 'paid')->sum(DB::raw('amount - paid_amount'));
-        $todayPayments = Payment::whereDate('payment_date', today())->sum('amount');
-        $monthlyRevenue = Payment::whereMonth('payment_date', now()->month)
-            ->whereYear('payment_date', now()->year)
-            ->sum('amount');
+        return $this->success(Cache::remember('dashboard:finance', now()->addSeconds(45), function () {
+            // 4 separate SUM queries → 1 query with conditional aggregation
+            $payRow = DB::selectOne("
+                SELECT
+                    COALESCE(SUM(amount), 0)                                                              AS total_revenue,
+                    COALESCE(SUM(amount) FILTER (WHERE payment_date::date = CURRENT_DATE), 0)             AS today_collection,
+                    COALESCE(SUM(amount) FILTER (
+                        WHERE DATE_TRUNC('month', payment_date) = DATE_TRUNC('month', NOW())
+                    ), 0)                                                                                  AS monthly_revenue
+                FROM payments
+            ");
 
-        // Revenue by fee type
-        $revenueByType = DB::table('payments')
-            ->join('student_fees', 'payments.student_fee_id', '=', 'student_fees.id')
-            ->join('fee_types', 'student_fees.fee_type_id', '=', 'fee_types.id')
-            ->selectRaw('fee_types.name, SUM(payments.amount) as total')
-            ->groupBy('fee_types.id', 'fee_types.name')
-            ->get();
+            $pendingFees = StudentFee::where('status', '!=', 'paid')
+                ->sum(DB::raw('amount - paid_amount'));
 
-        // Monthly trends
-        $monthlyTrends = Payment::selectRaw('DATE_FORMAT(payment_date, "%Y-%m") as month, SUM(amount) as total')
-            ->where('payment_date', '>=', now()->subMonths(6))
-            ->groupBy('month')
-            ->orderBy('month')
-            ->get();
+            // Revenue by fee type
+            $revenueByType = DB::table('payments')
+                ->join('student_fees', 'payments.student_fee_id', '=', 'student_fees.id')
+                ->join('fee_types', 'student_fees.fee_type_id', '=', 'fee_types.id')
+                ->selectRaw('fee_types.name, SUM(payments.amount) as total')
+                ->groupBy('fee_types.id', 'fee_types.name')
+                ->get();
 
-        // Recent payments
-        $recentPayments = Payment::with(['studentFee.student.user', 'studentFee.feeType', 'receivedBy'])
-            ->latest()
-            ->take(10)
-            ->get();
+            // Monthly trends
+            $monthlyTrends = Payment::selectRaw("TO_CHAR(payment_date, 'YYYY-MM') as month, SUM(amount) as total")
+                ->where('payment_date', '>=', now()->subMonths(6))
+                ->groupBy('month')
+                ->orderBy('month')
+                ->get();
 
-        return $this->success([
-            'total_revenue' => $totalRevenue,
-            'pending_fees' => $pendingFees,
-            'today_payments' => $todayPayments,
-            'monthly_revenue' => $monthlyRevenue,
-            'revenue_by_type' => $revenueByType,
-            'monthly_trends' => $monthlyTrends,
-            'recent_payments' => $recentPayments,
-        ]);
+            // Recent payments (limit columns & relations)
+            $recentPayments = Payment::with([
+                    'studentFee:id,student_id,fee_type_id,amount,paid_amount,status',
+                    'studentFee.feeType:id,name',
+                    'studentFee.student:id,user_id,student_id,level,status',
+                    'studentFee.student.user:id,first_name,last_name,email',
+                    'receivedBy:id,first_name,last_name,email',
+                ])
+                ->latest('id')
+                ->take(10)
+                ->get(['id', 'student_fee_id', 'amount', 'payment_date', 'reference_number', 'received_by']);
+
+            return [
+                'total_revenue'   => (float) ($payRow->total_revenue   ?? 0),
+                'pending_fees'    => (float) $pendingFees,
+                'today_collection'=> (float) ($payRow->today_collection ?? 0),
+                'monthly_revenue' => (float) ($payRow->monthly_revenue  ?? 0),
+                // legacy aliases kept for frontend compatibility
+                'today_payments'  => (float) ($payRow->today_collection ?? 0),
+                'revenue_by_type' => $revenueByType,
+                'monthly_trends'  => $monthlyTrends,
+                'recent_payments' => $recentPayments,
+            ];
+        }));
     }
 
     public function registrarStats()
     {
-        $stats = [
-            'total_students' => Student::count(),
-            'total_teachers' => Teacher::count(),
-            'active_students' => Student::where('status', 'active')->count(),
-            'new_this_month' => Student::whereMonth('enrollment_date', now()->month)
-                ->whereYear('enrollment_date', now()->year)
-                ->count(),
-        ];
+        return $this->success(Cache::remember('dashboard:registrar', now()->addSeconds(45), function () {
+            // 4 separate COUNTs → 1 query
+            $row = DB::selectOne("
+                SELECT
+                    COUNT(*)                                                              AS total_students,
+                    COUNT(*) FILTER (WHERE status = 'active')                            AS active_students,
+                    COUNT(*) FILTER (
+                        WHERE DATE_TRUNC('month', enrollment_date) = DATE_TRUNC('month', NOW())
+                    )                                                                     AS new_this_month
+                FROM students
+            ");
+            $totalTeachers = Teacher::count();
 
-        // Students by level
-        $studentsByLevel = Student::selectRaw('level, COUNT(*) as count')
-            ->groupBy('level')
-            ->get();
+            $stats = [
+                'total_students'  => (int) ($row->total_students  ?? 0),
+                'active_students' => (int) ($row->active_students ?? 0),
+                'new_this_month'  => (int) ($row->new_this_month  ?? 0),
+                'total_teachers'  => (int) $totalTeachers,
+            ];
 
-        // Recent registrations
-        $recentStudents = Student::with(['user', 'department'])
-            ->latest()
-            ->take(10)
-            ->get();
+            // Students by level
+            $studentsByLevel = Student::selectRaw('level, COUNT(*) as count')
+                ->groupBy('level')
+                ->get();
 
-        return $this->success([
-            'stats' => $stats,
-            'students_by_level' => $studentsByLevel,
-            'recent_students' => $recentStudents,
-        ]);
+            // Recent registrations (limit columns)
+            $recentStudents = Student::with([
+                    'user:id,first_name,last_name,email',
+                    'department:id,name',
+                ])
+                ->latest('id')
+                ->take(10)
+                ->get(['id', 'user_id', 'department_id', 'student_id', 'level', 'status', 'enrollment_date']);
+
+            return [
+                'stats' => $stats,
+                'students_by_level' => $studentsByLevel,
+                'recent_students' => $recentStudents,
+            ];
+        }));
     }
 }

@@ -67,7 +67,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/teacher', [DashboardController::class, 'teacherStats'])
             ->middleware('role:teacher');
         Route::get('/finance', [DashboardController::class, 'financeStats'])
-            ->middleware('role:finance');
+            ->middleware('role:admin|finance');
         Route::get('/registrar', [DashboardController::class, 'registrarStats'])
             ->middleware('role:registrar');
     });

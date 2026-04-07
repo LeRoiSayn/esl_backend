@@ -398,6 +398,16 @@ class FullTestDataSeeder extends Seeder
         }
     }
 
+    /**
+     * Create a Payment record without triggering the boot() event that auto-updates
+     * StudentFee.paid_amount. The seeder pre-sets paid_amount correctly on StudentFee,
+     * so the event would double-count every payment.
+     */
+    private function insertPayment(array $data): void
+    {
+        Payment::withoutEvents(fn () => Payment::create($data));
+    }
+
     private function createFeeWithPayment(Student $student, FeeType $feeType, string $scenario, string $context): void
     {
         $amount   = (float) $feeType->amount;
@@ -415,7 +425,7 @@ class FullTestDataSeeder extends Seeder
                     'due_date'     => $baseDate,     'status'      => 'paid',
                     'academic_year'=> $year,
                 ]);
-                Payment::create([
+                $this->insertPayment([
                     'student_fee_id'   => $fee->id,
                     'amount'           => $amount,
                     'payment_method'   => 'bank_transfer',
@@ -435,7 +445,7 @@ class FullTestDataSeeder extends Seeder
                     'academic_year'   => $year,         'installment_plan' => $plan,
                 ]);
                 for ($m = 0; $m < 3; $m++) {
-                    Payment::create([
+                    $this->insertPayment([
                         'student_fee_id'   => $fee->id,
                         'amount'           => $m === 2 ? $amount - ($monthly * 2) : $monthly,
                         'payment_method'   => 'mobile_money',
@@ -458,7 +468,7 @@ class FullTestDataSeeder extends Seeder
                     'academic_year'   => $year,         'installment_plan' => $plan,
                 ]);
                 for ($m = 0; $m < $paidMonths; $m++) {
-                    Payment::create([
+                    $this->insertPayment([
                         'student_fee_id'   => $fee->id,
                         'amount'           => $monthly,
                         'payment_method'   => 'cash',
@@ -478,7 +488,7 @@ class FullTestDataSeeder extends Seeder
                     'due_date'        => $baseDate->copy()->subMonths(3), 'status' => 'overdue',
                     'academic_year'   => $year,         'installment_plan' => $plan,
                 ]);
-                Payment::create([
+                $this->insertPayment([
                     'student_fee_id'   => $fee->id,
                     'amount'           => $monthly,
                     'payment_method'   => 'cash',
@@ -496,7 +506,7 @@ class FullTestDataSeeder extends Seeder
                     'due_date'     => $baseDate,     'status'      => 'partial',
                     'academic_year'=> $year,
                 ]);
-                Payment::create([
+                $this->insertPayment([
                     'student_fee_id'   => $fee->id,
                     'amount'           => $paid,
                     'payment_method'   => 'cash',
