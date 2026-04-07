@@ -128,7 +128,10 @@ class GradeController extends Controller
 
     public function byClass(int $classId)
     {
-        $enrollments = Enrollment::with(['student.user', 'grades'])
+        $enrollments = Enrollment::with([
+            'student.user',
+            'grades' => fn ($q) => $q->orderByDesc('id'),
+        ])
             ->where('class_id', $classId)
             ->where('status', 'enrolled')
             ->get();
@@ -204,13 +207,22 @@ class GradeController extends Controller
         $gradedCount = Grade::whereHas('enrollment', fn($q) => $q->where('class_id', $classId))->count();
         $totalCount  = \App\Models\Enrollment::where('class_id', $classId)->where('status', 'enrolled')->count();
 
-        $hasUnvalidated = Grade::whereHas('enrollment', fn($q) => $q->where('class_id', $classId))
-            ->whereNull('validated_at')
-            ->exists();
+        $enrolled = Enrollment::where('class_id', $classId)->where('status', 'enrolled')->get();
+        if ($enrolled->isEmpty()) {
+            return $this->error('Aucun étudiant inscrit dans cette classe.', 422);
+        }
 
-        if (!$hasUnvalidated) {
+        // Allow submit unless every enrolled student already has an admin-validated grade
+        // (covers: no grades yet, drafts only, or mix — not only "exists row with null validated_at")
+        $allValidated = $enrolled->every(function (Enrollment $e) {
+            $g = Grade::where('enrollment_id', $e->id)->orderByDesc('id')->first();
+
+            return $g && $g->validated_at !== null;
+        });
+
+        if ($allValidated) {
             return $this->error(
-                'Toutes les notes saisies pour cette classe sont déjà validées. Aucune nouvelle soumission n\'est nécessaire.',
+                'Toutes les notes de cette classe sont déjà validées par l\'administration. Aucune soumission n\'est nécessaire.',
                 422
             );
         }
