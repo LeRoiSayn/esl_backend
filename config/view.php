@@ -30,9 +30,12 @@ return [
 
     // Note: realpath() returns false if the directory doesn't exist yet, which can
     // cause "Please provide a valid cache path." in containerized deployments.
-    'compiled' => env(
-        'VIEW_COMPILED_PATH',
-        storage_path('framework/views')
-    ),
+    //
+    // Also, Render (and some dashboards) can set VIEW_COMPILED_PATH to an empty
+    // string. Treat empty as "not set" so we still use the default path.
+    'compiled' => (function () {
+        $fromEnv = env('VIEW_COMPILED_PATH');
+        return !empty($fromEnv) ? $fromEnv : storage_path('framework/views');
+    })(),
 
 ];

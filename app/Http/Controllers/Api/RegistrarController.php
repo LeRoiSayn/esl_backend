@@ -22,7 +22,8 @@ class RegistrarController extends Controller
 
         $role = $request->query('role', 'admin');
 
-        if (!in_array($role, ['admin', 'finance', 'registrar'])) {
+        // Allow registrar/admin to list all roles (including teachers and students)
+        if (!in_array($role, ['admin', 'finance', 'registrar', 'teacher', 'student'])) {
             return $this->error('Invalid role', 422);
         }
 
