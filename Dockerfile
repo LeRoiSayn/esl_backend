@@ -46,9 +46,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /var/www/html
 
+# Copy composer binary so dump-autoload can run with all source files present
+COPY --from=composer_deps /usr/bin/composer /usr/local/bin/composer
 COPY --from=composer_deps /app/vendor ./vendor
 COPY . .
 
+# Now composer exists — this actually runs and includes all project classes in the classmap
 RUN composer dump-autoload --optimize --classmap-authoritative --no-dev \
     && php artisan package:discover --ansi --no-interaction || true
 
@@ -63,4 +66,4 @@ USER www-data
 ENV PORT=8000
 EXPOSE 8000
 
-CMD ["sh", "-c", "php artisan migrate --force && php artisan db:seed --class=SystemConfigSeeder --force && php artisan serve --host=0.0.0.0 --port=\"${PORT}\""]
+CMD ["sh", "-c", "php artisan serve --host=0.0.0.0 --port=\"${PORT}\""]
