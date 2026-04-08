@@ -7,12 +7,13 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Change courses.level from ENUM to VARCHAR so it accepts dynamic values
-        DB::statement("ALTER TABLE courses MODIFY COLUMN level VARCHAR(10) NOT NULL");
+        // PostgreSQL syntax: ALTER COLUMN ... TYPE
+        DB::statement("ALTER TABLE courses ALTER COLUMN level TYPE VARCHAR(10)");
     }
 
     public function down(): void
     {
-        DB::statement("ALTER TABLE courses MODIFY COLUMN level ENUM('L1','L2','L3','M1','M2','D1','D2','D3') NOT NULL");
+        // Restore as VARCHAR (PostgreSQL has no ENUM in the same way — keep as string)
+        DB::statement("ALTER TABLE courses ALTER COLUMN level TYPE VARCHAR(10)");
     }
 };
