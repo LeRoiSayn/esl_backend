@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\SystemSetting;
 
 class Grade extends Model
 {
@@ -46,6 +47,20 @@ class Grade extends Model
 
     public static function calculateLetterGrade(float $score): string
     {
+        $thresholds = SystemSetting::get('grade_letter_thresholds');
+
+        if (is_array($thresholds) && count($thresholds) > 0) {
+            // Thresholds must be sorted highest-min first
+            usort($thresholds, fn($a, $b) => $b['min'] <=> $a['min']);
+            foreach ($thresholds as $t) {
+                if ($score >= (float) $t['min']) {
+                    return $t['grade'];
+                }
+            }
+            return 'F';
+        }
+
+        // Hardcoded fallback
         if ($score >= 90) return 'A+';
         if ($score >= 85) return 'A';
         if ($score >= 80) return 'A-';

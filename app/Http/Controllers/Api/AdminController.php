@@ -16,6 +16,7 @@ use App\Models\Transaction;
 use App\Models\Teacher;
 use App\Models\Department;
 use App\Models\ClassModel;
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -573,13 +574,17 @@ class AdminController extends Controller
 
     private function renderStudentSheetHtml(array $payload, string $type): string
     {
+        // Use configurable institution logo (falls back to esl-logo.png for compatibility)
         $logoDataUri = null;
-        $logoPath = public_path('esl-logo.png');
+        $logoFilename = SystemSetting::get('institution_logo', 'esl-logo.png');
+        $logoPath = public_path($logoFilename);
         if (file_exists($logoPath)) {
-            $logoDataUri = 'data:image/png;base64,' . base64_encode(file_get_contents($logoPath));
+            $ext = pathinfo($logoPath, PATHINFO_EXTENSION);
+            $mime = $ext === 'png' ? 'image/png' : 'image/jpeg';
+            $logoDataUri = "data:{$mime};base64," . base64_encode(file_get_contents($logoPath));
         }
 
-        $universityName = config('app.name', 'École de Santé de Libreville');
+        $universityName = SystemSetting::get('institution_name', config('app.name', 'École de Santé de Libreville'));
 
         $view = $type === 'financial'
             ? 'reports.student_financial_sheet'

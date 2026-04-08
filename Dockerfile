@@ -52,8 +52,8 @@ COPY --from=composer_deps /app/vendor ./vendor
 COPY . .
 
 # Now composer exists — this actually runs and includes all project classes in the classmap
-RUN composer dump-autoload --optimize --classmap-authoritative --no-dev \
-    && php artisan package:discover --ansi --no-interaction || true
+RUN composer dump-autoload --optimize --no-dev
+RUN php artisan package:discover --ansi --no-interaction || true
 
 RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache
 

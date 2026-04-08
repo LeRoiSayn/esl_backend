@@ -17,6 +17,7 @@ class FeeType extends Model
         'is_active',
         'level',
         'category',
+        'academic_year',
     ];
 
     protected $casts = [

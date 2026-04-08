@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Course;
+use App\Models\AcademicLevel;
 use App\Models\ActivityLog;
 use Illuminate\Http\Request;
 
@@ -40,14 +41,15 @@ class CourseController extends Controller
 
     public function store(Request $request)
     {
+        $levelCodes = AcademicLevel::activeCodes();
         $request->validate([
-            'department_id' => 'required|exists:departments,id',
-            'code' => 'required|string|max:20|unique:courses',
-            'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'credits' => 'required|integer|min:1|max:30',
-            'level' => 'required|in:L1,L2,L3,M1,M2,D1,D2,D3',
-            'course_type' => 'nullable|in:tronc_commun,specialisation',
+            'department_id'  => 'required|exists:departments,id',
+            'code'           => 'required|string|max:20|unique:courses',
+            'name'           => 'required|string|max:255',
+            'description'    => 'nullable|string',
+            'credits'        => 'required|integer|min:1|max:30',
+            'level'          => ['required', 'string', 'in:' . implode(',', $levelCodes)],
+            'course_type'    => 'nullable|in:tronc_commun,specialisation',
             'hours_per_week' => 'nullable|integer|min:1|max:20',
         ]);
 
@@ -67,16 +69,17 @@ class CourseController extends Controller
 
     public function update(Request $request, Course $course)
     {
+        $levelCodes = AcademicLevel::activeCodes();
         $request->validate([
-            'department_id' => 'sometimes|exists:departments,id',
-            'code' => 'sometimes|string|max:20|unique:courses,code,' . $course->id,
-            'name' => 'sometimes|string|max:255',
-            'description' => 'nullable|string',
-            'credits' => 'sometimes|integer|min:1|max:30',
-            'level' => 'sometimes|in:L1,L2,L3,M1,M2,D1,D2,D3',
-            'course_type' => 'nullable|in:tronc_commun,specialisation',
+            'department_id'  => 'sometimes|exists:departments,id',
+            'code'           => 'sometimes|string|max:20|unique:courses,code,' . $course->id,
+            'name'           => 'sometimes|string|max:255',
+            'description'    => 'nullable|string',
+            'credits'        => 'sometimes|integer|min:1|max:30',
+            'level'          => ['sometimes', 'string', 'in:' . implode(',', $levelCodes)],
+            'course_type'    => 'nullable|in:tronc_commun,specialisation',
             'hours_per_week' => 'nullable|integer|min:1|max:20',
-            'is_active' => 'sometimes|boolean',
+            'is_active'      => 'sometimes|boolean',
         ]);
 
         $oldValues = $course->toArray();

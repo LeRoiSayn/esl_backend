@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\FeeType;
+use App\Models\AcademicLevel;
+use App\Models\SystemSetting;
 use App\Models\ActivityLog;
 use Illuminate\Http\Request;
 
@@ -17,6 +19,20 @@ class FeeTypeController extends Controller
             $query->where('is_active', true);
         }
 
+        if ($request->has('academic_year') && $request->academic_year) {
+            $query->where(function ($q) use ($request) {
+                $q->where('academic_year', $request->academic_year)
+                  ->orWhereNull('academic_year');
+            });
+        }
+
+        if ($request->has('level') && $request->level) {
+            $query->where(function ($q) use ($request) {
+                $q->where('level', $request->level)
+                  ->orWhereNull('level');
+            });
+        }
+
         $feeTypes = $query->orderBy('name')->get();
 
         return $this->success($feeTypes);
@@ -24,12 +40,16 @@ class FeeTypeController extends Controller
 
     public function store(Request $request)
     {
+        $levelCodes  = AcademicLevel::activeCodes();
+        $categories  = SystemSetting::get('fee_categories', ['tuition', 'registration', 'library', 'lab', 'other']);
         $request->validate([
-            'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'amount' => 'required|numeric|min:0',
-            'is_mandatory' => 'boolean',
-            'level' => 'nullable|in:L1,L2,L3,M1,M2,D1,D2,D3',
+            'name'          => 'required|string|max:255',
+            'description'   => 'nullable|string',
+            'amount'        => 'required|numeric|min:0',
+            'is_mandatory'  => 'boolean',
+            'category'      => ['nullable', 'string', 'in:' . implode(',', $categories)],
+            'level'         => ['nullable', 'string', 'in:' . implode(',', $levelCodes)],
+            'academic_year' => 'nullable|string|max:10|regex:/^\d{4}-\d{4}$/',
         ]);
 
         $feeType = FeeType::create($request->all());
@@ -46,13 +66,17 @@ class FeeTypeController extends Controller
 
     public function update(Request $request, FeeType $feeType)
     {
+        $levelCodes  = AcademicLevel::activeCodes();
+        $categories  = SystemSetting::get('fee_categories', ['tuition', 'registration', 'library', 'lab', 'other']);
         $request->validate([
-            'name' => 'sometimes|string|max:255',
-            'description' => 'nullable|string',
-            'amount' => 'sometimes|numeric|min:0',
-            'is_mandatory' => 'sometimes|boolean',
-            'is_active' => 'sometimes|boolean',
-            'level' => 'nullable|in:L1,L2,L3,M1,M2,D1,D2,D3',
+            'name'          => 'sometimes|string|max:255',
+            'description'   => 'nullable|string',
+            'amount'        => 'sometimes|numeric|min:0',
+            'is_mandatory'  => 'sometimes|boolean',
+            'is_active'     => 'sometimes|boolean',
+            'category'      => ['nullable', 'string', 'in:' . implode(',', $categories)],
+            'level'         => ['nullable', 'string', 'in:' . implode(',', $levelCodes)],
+            'academic_year' => 'nullable|string|max:10|regex:/^\d{4}-\d{4}$/',
         ]);
 
         $oldValues = $feeType->toArray();

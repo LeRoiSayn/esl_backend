@@ -287,7 +287,10 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
-        // ── 6. Classes, enrollments, grades & finance ──────────────────────────
+        // ── 6. System settings & academic levels ──────────────────────────────
+        $this->call(SystemConfigSeeder::class);
+
+        // ── 7. Classes, enrollments, grades & finance ──────────────────────────
         $this->call(FullTestDataSeeder::class);
     }
 }

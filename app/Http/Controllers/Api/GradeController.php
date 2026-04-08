@@ -9,6 +9,7 @@ use App\Models\ActivityLog;
 use App\Models\ClassModel;
 use App\Models\Notification;
 use App\Models\User;
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 
 class GradeController extends Controller
@@ -32,14 +33,25 @@ class GradeController extends Controller
         return $this->success($grades);
     }
 
+    private function gradeMaxPoints(): array
+    {
+        return [
+            'attendance' => SystemSetting::get('grade_weight_attendance', 10),
+            'quiz'       => SystemSetting::get('grade_weight_quiz', 20),
+            'ca'         => SystemSetting::get('grade_weight_ca', 30),
+            'exam'       => SystemSetting::get('grade_weight_exam', 40),
+        ];
+    }
+
     public function store(Request $request)
     {
+        $max = $this->gradeMaxPoints();
         $request->validate([
             'enrollment_id'         => 'required|exists:enrollments,id',
-            'attendance_score'      => 'nullable|numeric|min:0|max:10',
-            'quiz_score'            => 'nullable|numeric|min:0|max:20',
-            'continuous_assessment' => 'nullable|numeric|min:0|max:30',
-            'exam_score'            => 'nullable|numeric|min:0|max:40',
+            'attendance_score'      => "nullable|numeric|min:0|max:{$max['attendance']}",
+            'quiz_score'            => "nullable|numeric|min:0|max:{$max['quiz']}",
+            'continuous_assessment' => "nullable|numeric|min:0|max:{$max['ca']}",
+            'exam_score'            => "nullable|numeric|min:0|max:{$max['exam']}",
             'remarks'               => 'nullable|string',
         ]);
 
@@ -85,11 +97,12 @@ class GradeController extends Controller
             return $this->error('Cette note est validée et ne peut plus être modifiée.', 422);
         }
 
+        $max = $this->gradeMaxPoints();
         $request->validate([
-            'attendance_score'      => 'nullable|numeric|min:0|max:10',
-            'quiz_score'            => 'nullable|numeric|min:0|max:20',
-            'continuous_assessment' => 'nullable|numeric|min:0|max:30',
-            'exam_score'            => 'nullable|numeric|min:0|max:40',
+            'attendance_score'      => "nullable|numeric|min:0|max:{$max['attendance']}",
+            'quiz_score'            => "nullable|numeric|min:0|max:{$max['quiz']}",
+            'continuous_assessment' => "nullable|numeric|min:0|max:{$max['ca']}",
+            'exam_score'            => "nullable|numeric|min:0|max:{$max['exam']}",
             'remarks'               => 'nullable|string',
         ]);
 
@@ -141,13 +154,14 @@ class GradeController extends Controller
 
     public function bulkUpdate(Request $request)
     {
+        $max = $this->gradeMaxPoints();
         $request->validate([
             'grades'                        => 'required|array',
             'grades.*.enrollment_id'        => 'required|exists:enrollments,id',
-            'grades.*.attendance_score'     => 'nullable|numeric|min:0|max:10',
-            'grades.*.quiz_score'           => 'nullable|numeric|min:0|max:20',
-            'grades.*.continuous_assessment'=> 'nullable|numeric|min:0|max:30',
-            'grades.*.exam_score'           => 'nullable|numeric|min:0|max:40',
+            'grades.*.attendance_score'     => "nullable|numeric|min:0|max:{$max['attendance']}",
+            'grades.*.quiz_score'           => "nullable|numeric|min:0|max:{$max['quiz']}",
+            'grades.*.continuous_assessment'=> "nullable|numeric|min:0|max:{$max['ca']}",
+            'grades.*.exam_score'           => "nullable|numeric|min:0|max:{$max['exam']}",
         ]);
 
         $updated = 0;

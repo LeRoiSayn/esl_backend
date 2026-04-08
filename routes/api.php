@@ -24,8 +24,12 @@ use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\RegistrarController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\SettingsController;
+use App\Http\Controllers\Api\SystemSettingController;
+use App\Http\Controllers\Api\AcademicLevelController;
 
 // ==================== PUBLIC ROUTES ====================
+Route::get('/system-settings/public', [SystemSettingController::class, 'publicSettings']);
+Route::get('/academic-levels', [AcademicLevelController::class, 'index']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/verify-login-otp', [AuthController::class, 'verifyLoginOtp']);
 Route::post('/resend-otp', [AuthController::class, 'resendOtp']);
@@ -149,6 +153,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/announcements', [AnnouncementController::class, 'store']);
         Route::put('/announcements/{announcement}', [AnnouncementController::class, 'update']);
         Route::delete('/announcements/{announcement}', [AnnouncementController::class, 'destroy']);
+
+        // System Settings (admin only)
+        Route::get('/system-settings', [SystemSettingController::class, 'index']);
+        Route::put('/system-settings', [SystemSettingController::class, 'update']);
+        Route::post('/system-settings/logo', [SystemSettingController::class, 'uploadLogo']);
+
+        // Academic Levels (admin manages)
+        Route::post('/academic-levels', [AcademicLevelController::class, 'store']);
+        Route::put('/academic-levels/{academicLevel}', [AcademicLevelController::class, 'update']);
+        Route::delete('/academic-levels/{academicLevel}', [AcademicLevelController::class, 'destroy']);
+        Route::post('/academic-levels/{academicLevel}/toggle', [AcademicLevelController::class, 'toggle']);
+        Route::post('/academic-levels/reorder', [AcademicLevelController::class, 'reorder']);
 
         // Activity Logs (admin only)
         Route::get('/activity-logs', [ActivityLogController::class, 'index']);
