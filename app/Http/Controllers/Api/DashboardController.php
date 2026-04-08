@@ -137,13 +137,46 @@ class DashboardController extends Controller
                 ->where('status', '!=', 'paid')
                 ->sum(fn ($f) => (float) ($f->amount - $f->paid_amount));
 
-            $nextFee = $fees->where('status', '!=', 'paid')
-                ->filter(fn ($f) => $f->due_date !== null)
-                ->sortBy('due_date')
-                ->first();
+            // Installment-aware next-due computation.
+            // For fees with a payment plan, find the first unpaid installment instead of
+            // using the fee-level due_date (which reflects the whole fee, not the next tranche).
+            $nextDueDate   = null;
+            $nextDueAmount = null;
 
-            $daysUntilDue = $nextFee
-                ? (int) now()->startOfDay()->diffInDays($nextFee->due_date->startOfDay(), false)
+            foreach ($fees->where('status', '!=', 'paid') as $f) {
+                $plan = $f->installment_plan; // cast: array|null
+
+                if (!empty($plan['installments'])) {
+                    $basePaid  = (float) ($plan['base_paid_amount'] ?? $f->paid_amount ?? 0);
+                    $remaining = max(0.0, (float) $f->paid_amount - $basePaid);
+
+                    foreach ($plan['installments'] as $inst) {
+                        $instAmt = (float) $inst['amount'];
+                        if ($remaining >= $instAmt) {
+                            $remaining -= $instAmt;
+                            continue;
+                        }
+                        // First unpaid (or partially-paid) installment
+                        $instDue = !empty($inst['due_date'])
+                            ? \Carbon\Carbon::parse($inst['due_date'])
+                            : null;
+                        if ($instDue && ($nextDueDate === null || $instDue->lt($nextDueDate))) {
+                            $nextDueDate   = $instDue;
+                            $nextDueAmount = round($instAmt - $remaining, 2);
+                        }
+                        break;
+                    }
+                } else {
+                    // Regular fee without a plan
+                    if ($f->due_date && ($nextDueDate === null || $f->due_date->lt($nextDueDate))) {
+                        $nextDueDate   = $f->due_date;
+                        $nextDueAmount = round((float) ($f->amount - $f->paid_amount), 2);
+                    }
+                }
+            }
+
+            $daysUntilDue = $nextDueDate
+                ? (int) now()->startOfDay()->diffInDays($nextDueDate->startOfDay(), false)
                 : null;
 
             // Course list: keep it small for the dashboard (avoid returning huge payloads)
@@ -166,11 +199,12 @@ class DashboardController extends Controller
                 'total_credits' => (int) ($creditsRow->total_credits ?? 0),
                 'courses' => $courses,
                 'fees_summary' => [
-                    'total' => (float) $fees->sum('amount'),
-                    'paid' => (float) $fees->sum('paid_amount'),
-                    'pending' => (float) $pendingFees,
-                    'next_due_date' => $nextFee?->due_date?->toDateString(),
-                    'days_until_due' => $daysUntilDue,
+                    'total'           => (float) $fees->sum('amount'),
+                    'paid'            => (float) $fees->sum('paid_amount'),
+                    'pending'         => (float) $pendingFees,
+                    'next_due_date'   => $nextDueDate?->toDateString(),
+                    'next_due_amount' => $nextDueAmount,
+                    'days_until_due'  => $daysUntilDue,
                 ],
             ];
         });
