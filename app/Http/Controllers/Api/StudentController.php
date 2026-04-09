@@ -12,6 +12,7 @@ use App\Models\Teacher;
 use App\Models\FeeType;
 use App\Models\StudentFee;
 use App\Models\ActivityLog;
+use App\Models\AcademicLevel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -65,7 +66,7 @@ class StudentController extends Controller
             'date_of_birth' => 'nullable|date',
             'gender' => 'nullable|in:male,female,other',
             'department_id' => 'required|exists:departments,id',
-            'level' => 'required|in:L1,L2,L3,M1,M2,D1,D2,D3',
+            'level' => ['required', 'string', 'in:' . implode(',', AcademicLevel::activeCodes())],
             'enrollment_date' => 'required|date',
             'guardian_name' => 'nullable|string|max:255',
             'guardian_phone' => 'nullable|string|max:20',
@@ -152,7 +153,7 @@ class StudentController extends Controller
             'date_of_birth' => 'nullable|date',
             'gender' => 'nullable|in:male,female,other',
             'department_id' => 'sometimes|exists:departments,id',
-            'level' => 'sometimes|in:L1,L2,L3,M1,M2,D1,D2,D3',
+            'level' => ['sometimes', 'string', 'in:' . implode(',', AcademicLevel::activeCodes())],
             'guardian_name' => 'nullable|string|max:255',
             'guardian_phone' => 'nullable|string|max:20',
             'guardian_email' => 'nullable|email',

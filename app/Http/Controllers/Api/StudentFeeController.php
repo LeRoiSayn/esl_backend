@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\StudentFee;
 use App\Models\ActivityLog;
+use App\Models\AcademicLevel;
 use Illuminate\Http\Request;
 
 class StudentFeeController extends Controller
@@ -128,7 +129,7 @@ class StudentFeeController extends Controller
             'amount' => 'required|numeric|min:0',
             'due_date' => 'required|date',
             'academic_year' => 'required|string|max:20',
-            'level' => 'nullable|in:L1,L2,L3,M1,M2,D1,D2,D3',
+            'level' => ['nullable', 'string', 'in:' . implode(',', AcademicLevel::activeCodes())],
             'department_id' => 'nullable|exists:departments,id',
         ]);
 
