@@ -120,6 +120,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/attendance/class/{classId}', [AttendanceController::class, 'byClass']);
     Route::get('/attendance/class/{classId}/statistics', [AttendanceController::class, 'statistics']);
 
+    // System Settings (admin + registrar)
+    Route::middleware('role:admin|registrar')->group(function () {
+        Route::get('/system-settings', [SystemSettingController::class, 'index']);
+        Route::put('/system-settings', [SystemSettingController::class, 'update']);
+        Route::post('/system-settings/logo', [SystemSettingController::class, 'uploadLogo']);
+    });
+
     // ==================== ADMIN MANAGEMENT ====================
     Route::middleware('role:admin')->group(function () {
         // Faculties & Departments (write)
@@ -154,10 +161,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/announcements/{announcement}', [AnnouncementController::class, 'update']);
         Route::delete('/announcements/{announcement}', [AnnouncementController::class, 'destroy']);
 
-        // System Settings (admin only)
-        Route::get('/system-settings', [SystemSettingController::class, 'index']);
-        Route::put('/system-settings', [SystemSettingController::class, 'update']);
-        Route::post('/system-settings/logo', [SystemSettingController::class, 'uploadLogo']);
+        // Academic Levels (admin manages)
 
         // Academic Levels (admin manages)
         Route::post('/academic-levels', [AcademicLevelController::class, 'store']);

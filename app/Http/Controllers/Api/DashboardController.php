@@ -209,6 +209,9 @@ class DashboardController extends Controller
             ];
         });
 
+        // student_status is added outside the cache so it reflects real-time status changes
+        $payload['student_status'] = $student->status;
+
         return $this->success($payload);
     }
 
