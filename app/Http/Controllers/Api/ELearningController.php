@@ -427,6 +427,82 @@ class ELearningController extends Controller
     }
 
     /**
+     * Combined endpoint: returns quizzes + materials + assignments for a student
+     * in a single HTTP round-trip. This replaces 3 separate fetches on course selection.
+     */
+    public function getStudentCourseData(Request $request, $courseId)
+    {
+        $user      = $request->user();
+        $student   = $this->getStudent($request);
+        $studentId = $student->id;
+
+        // ── Materials ────────────────────────────────────────────────────────
+        $classIds  = $this->getStudentClassIdsForCourse($studentId, $courseId);
+        $materials = CourseMaterial::where('course_id', $courseId)
+            ->where(function ($q) use ($classIds) {
+                $q->whereNull('class_id')->orWhereIn('class_id', $classIds);
+            })
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        // ── Quizzes ───────────────────────────────────────────────────────────
+        $quizzes = Quiz::with(['questions'])
+            ->where('course_id', $courseId)
+            ->where('status', 'published')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        // Batch-load all attempts for this student — one query
+        $quizIds     = $quizzes->pluck('id')->all();
+        $allAttempts = QuizAttempt::where('student_id', $studentId)
+            ->whereIn('quiz_id', $quizIds)
+            ->get()
+            ->groupBy('quiz_id');
+
+        $quizzes = $quizzes->map(function ($quiz) use ($allAttempts) {
+            $group     = $allAttempts->get($quiz->id, collect());
+            $completed = $group->where('status', 'completed');
+
+            $quiz->my_attempts     = $completed->count();
+            $quiz->best_score      = $completed->max('score');
+            $quiz->has_in_progress = $group->where('status', 'in_progress')->isNotEmpty();
+            $quiz->can_attempt     = $completed->count() < $quiz->max_attempts && $quiz->isAvailable();
+            return $quiz;
+        });
+
+        // ── Assignments ───────────────────────────────────────────────────────
+        $assignments = Assignment::where('course_id', $courseId)
+            ->where('status', 'published')
+            ->where(function ($q) use ($classIds) {
+                $q->whereNull('class_id')->orWhereIn('class_id', $classIds);
+            })
+            ->orderBy('due_date', 'asc')
+            ->get();
+
+        // Batch-load student submissions — one query instead of N
+        $assignmentIds = $assignments->pluck('id')->all();
+        $mySubmissions = AssignmentSubmission::where('student_id', $studentId)
+            ->whereIn('assignment_id', $assignmentIds)
+            ->latest()
+            ->get()
+            ->keyBy('assignment_id');
+
+        $assignments = $assignments->map(function ($a) use ($mySubmissions) {
+            $sub = $mySubmissions->get($a->id);
+            $a->is_overdue    = $a->isOverdue();
+            $a->can_submit    = $a->canSubmit() && (!$sub || $a->allow_multiple_submissions);
+            $a->my_submission = $sub;   // full object to match getCourseAssignments behaviour
+            return $a;
+        });
+
+        return response()->json([
+            'materials'   => $materials,
+            'quizzes'     => $quizzes,
+            'assignments' => $assignments,
+        ]);
+    }
+
+    /**
      * Get course materials for students
      */
     public function getCourseMaterials(Request $request, $courseId)
@@ -568,29 +644,25 @@ class ELearningController extends Controller
 
         $quizzes = $query->orderBy('created_at', 'desc')->get();
 
-        // For students, add attempt info
+        // For students, add attempt info — batch all in ONE query to avoid N+1.
         if ($user->role === 'student') {
-            $quizzes = $quizzes->map(function ($quiz) use ($user) {
-                // Count only COMPLETED attempts for the badge and limit check.
-                // An in_progress attempt is still ongoing — the student should be
-                // able to finish it without seeing "attempts exhausted".
-                $completedAttempts = QuizAttempt::where('quiz_id', $quiz->id)
-                    ->where('student_id', $user->student->id)
-                    ->where('status', 'completed')
-                    ->get();
+            $quizIds    = $quizzes->pluck('id')->all();
+            $studentId  = $user->student->id;
 
-                // Also check for a dangling in_progress attempt (e.g. tab closed
-                // during the quiz). If one exists and we haven't exceeded the limit
-                // it should not block the student from retrying.
-                $hasInProgress = QuizAttempt::where('quiz_id', $quiz->id)
-                    ->where('student_id', $user->student->id)
-                    ->where('status', 'in_progress')
-                    ->exists();
+            // Single query: all attempts for this student across all quizzes on this course
+            $allAttempts = QuizAttempt::where('student_id', $studentId)
+                ->whereIn('quiz_id', $quizIds)
+                ->get()
+                ->groupBy('quiz_id');   // keyed by quiz_id
 
-                $quiz->my_attempts   = $completedAttempts->count();
-                $quiz->best_score    = $completedAttempts->max('score');
-                $quiz->has_in_progress = $hasInProgress;
-                $quiz->can_attempt   = $completedAttempts->count() < $quiz->max_attempts && $quiz->isAvailable();
+            $quizzes = $quizzes->map(function ($quiz) use ($allAttempts) {
+                $group    = $allAttempts->get($quiz->id, collect());
+                $completed = $group->where('status', 'completed');
+
+                $quiz->my_attempts     = $completed->count();
+                $quiz->best_score      = $completed->max('score');
+                $quiz->has_in_progress = $group->where('status', 'in_progress')->isNotEmpty();
+                $quiz->can_attempt     = $completed->count() < $quiz->max_attempts && $quiz->isAvailable();
 
                 return $quiz;
             });

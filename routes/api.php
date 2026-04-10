@@ -305,6 +305,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/courses/{id}', [ELearningController::class, 'updateOnlineCourse']);
         Route::get('/courses/{id}/attendance-report', [ELearningController::class, 'onlineCourseAttendanceReport']);
         Route::post('/materials', [ELearningController::class, 'uploadMaterial']);
+        Route::get('/course-data/{courseId}', [ELearningController::class, 'getStudentCourseData']); // Combined endpoint
         Route::get('/materials/course/{courseId}', [ELearningController::class, 'getCourseMaterials']);
         Route::get('/materials/{id}/download', [ELearningController::class, 'downloadMaterial']);
         Route::delete('/materials/{id}', [ELearningController::class, 'deleteMaterial']);
