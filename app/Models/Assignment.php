@@ -26,8 +26,10 @@ class Assignment extends Model
         'status',
     ];
 
+    // Naive datetime format — no timezone suffix — so the frontend displays
+    // wall-clock time without UTC offset conversion.
     protected $casts = [
-        'due_date' => 'datetime',
+        'due_date' => 'datetime:Y-m-d\TH:i:s',
         'allow_late_submission' => 'boolean',
         'allow_multiple_submissions' => 'boolean',
         'allowed_file_types' => 'array',

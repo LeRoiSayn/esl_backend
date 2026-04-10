@@ -20,6 +20,7 @@ class SystemConfigSeeder extends Seeder
             ['key' => 'institution_email',   'value' => '',                               'type' => 'string',  'group' => 'institution', 'label' => 'Email officiel'],
             ['key' => 'currency',            'value' => 'XAF',                            'type' => 'string',  'group' => 'institution', 'label' => 'Code devise'],
             ['key' => 'currency_symbol',     'value' => 'FCFA',                           'type' => 'string',  'group' => 'institution', 'label' => 'Symbole devise'],
+            ['key' => 'timezone',            'value' => 'Africa/Libreville',              'type' => 'string',  'group' => 'institution', 'label' => 'Fuseau horaire (ex: Africa/Libreville, Europe/Paris, UTC)'],
             // Academic
             ['key' => 'current_academic_year', 'value' => '2025-2026', 'type' => 'string', 'group' => 'academic', 'label' => 'Année académique courante'],
             // Grading scale

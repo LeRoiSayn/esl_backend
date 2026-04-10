@@ -79,7 +79,7 @@ class SystemSettingController extends Controller
      */
     public function publicSettings()
     {
-        $keys = ['institution_name', 'institution_logo', 'currency', 'currency_symbol', 'current_academic_year', 'fee_categories', 'grade_letter_thresholds', 'grade_weight_attendance', 'grade_weight_quiz', 'grade_weight_ca', 'grade_weight_exam'];
+        $keys = ['institution_name', 'institution_logo', 'currency', 'currency_symbol', 'current_academic_year', 'fee_categories', 'grade_letter_thresholds', 'grade_weight_attendance', 'grade_weight_quiz', 'grade_weight_ca', 'grade_weight_exam', 'timezone'];
         $all = SystemSetting::allKeyed(); // already cast
         $settings = collect($keys)
             ->filter(fn($k) => array_key_exists($k, $all))

@@ -24,8 +24,10 @@ class OnlineCourse extends Model
         'status',
     ];
 
+    // Use naive datetime format (no timezone suffix) so the frontend displays
+    // wall-clock time without any UTC offset conversion.
     protected $casts = [
-        'scheduled_at' => 'datetime',
+        'scheduled_at' => 'datetime:Y-m-d\TH:i:s',
     ];
 
     public function course()

@@ -26,12 +26,14 @@ class Quiz extends Model
         'status',
     ];
 
+    // Naive datetime format — no timezone suffix — so the frontend displays
+    // wall-clock time without UTC offset conversion.
     protected $casts = [
         'shuffle_questions' => 'boolean',
         'show_answers_after' => 'boolean',
         'proctoring_enabled' => 'boolean',
-        'available_from' => 'datetime',
-        'available_until' => 'datetime',
+        'available_from' => 'datetime:Y-m-d\TH:i:s',
+        'available_until' => 'datetime:Y-m-d\TH:i:s',
     ];
 
     public function course()
