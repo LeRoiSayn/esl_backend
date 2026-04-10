@@ -571,14 +571,27 @@ class ELearningController extends Controller
         // For students, add attempt info
         if ($user->role === 'student') {
             $quizzes = $quizzes->map(function ($quiz) use ($user) {
-                $attempts = QuizAttempt::where('quiz_id', $quiz->id)
+                // Count only COMPLETED attempts for the badge and limit check.
+                // An in_progress attempt is still ongoing — the student should be
+                // able to finish it without seeing "attempts exhausted".
+                $completedAttempts = QuizAttempt::where('quiz_id', $quiz->id)
                     ->where('student_id', $user->student->id)
+                    ->where('status', 'completed')
                     ->get();
-                
-                $quiz->my_attempts = $attempts->count();
-                $quiz->best_score = $attempts->max('score');
-                $quiz->can_attempt = $attempts->count() < $quiz->max_attempts && $quiz->isAvailable();
-                
+
+                // Also check for a dangling in_progress attempt (e.g. tab closed
+                // during the quiz). If one exists and we haven't exceeded the limit
+                // it should not block the student from retrying.
+                $hasInProgress = QuizAttempt::where('quiz_id', $quiz->id)
+                    ->where('student_id', $user->student->id)
+                    ->where('status', 'in_progress')
+                    ->exists();
+
+                $quiz->my_attempts   = $completedAttempts->count();
+                $quiz->best_score    = $completedAttempts->max('score');
+                $quiz->has_in_progress = $hasInProgress;
+                $quiz->can_attempt   = $completedAttempts->count() < $quiz->max_attempts && $quiz->isAvailable();
+
                 return $quiz;
             });
         }
@@ -604,22 +617,35 @@ class ELearningController extends Controller
             return response()->json(['error' => 'Ce quiz n\'est pas disponible'], 403);
         }
 
-        // Check attempts
-        $attemptCount = QuizAttempt::where('quiz_id', $id)
+        // Resume an existing in_progress attempt if present (e.g. student closed
+        // the tab mid-quiz). This prevents double-counting toward max_attempts.
+        $existingAttempt = QuizAttempt::where('quiz_id', $id)
             ->where('student_id', $student->id)
-            ->count();
+            ->where('status', 'in_progress')
+            ->latest('started_at')
+            ->first();
 
-        if ($attemptCount >= $quiz->max_attempts) {
-            return response()->json(['error' => 'Nombre maximum de tentatives atteint'], 403);
+        if ($existingAttempt) {
+            $attempt = $existingAttempt;
+        } else {
+            // Only count COMPLETED attempts toward the max_attempts limit.
+            $completedCount = QuizAttempt::where('quiz_id', $id)
+                ->where('student_id', $student->id)
+                ->where('status', 'completed')
+                ->count();
+
+            if ($completedCount >= $quiz->max_attempts) {
+                return response()->json(['error' => 'Nombre maximum de tentatives atteint'], 403);
+            }
+
+            // Create a fresh attempt
+            $attempt = QuizAttempt::create([
+                'quiz_id' => $id,
+                'student_id' => $student->id,
+                'started_at' => now(),
+                'status' => 'in_progress',
+            ]);
         }
-
-        // Create attempt
-        $attempt = QuizAttempt::create([
-            'quiz_id' => $id,
-            'student_id' => $student->id,
-            'started_at' => now(),
-            'status' => 'in_progress',
-        ]);
 
         // Get questions (shuffle if needed)
         $questions = $quiz->shuffle_questions 
@@ -1028,39 +1054,48 @@ class ELearningController extends Controller
             return response()->json(['error' => 'Accès refusé'], 403);
         }
 
-        $attempts = QuizAttempt::with(['student.user'])
+        // Include ALL attempts (completed + in_progress) so the teacher can see
+        // students who started the quiz but haven't submitted yet.
+        // Stats are computed on completed attempts only.
+        $allAttempts = QuizAttempt::with(['student.user'])
             ->where('quiz_id', $quizId)
-            ->where('status', 'completed')
+            ->orderByRaw("CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END")   // completed first
             ->orderBy('completed_at', 'desc')
-            ->get()
-            ->map(function ($attempt) {
-                $student = $attempt->student;
-                return [
-                    'id' => $attempt->id,
-                    'student' => [
-                        'id' => $student?->id,
-                        'name' => $student
-                            ? (($student->user?->first_name ?? '') . ' ' . ($student->user?->last_name ?? ''))
-                            : 'Étudiant inconnu',
-                        'registration_number' => $student?->student_id ?? 'N/A',
-                    ],
-                    'score' => $attempt->score,
-                    'correct_count' => $attempt->correct_count,
-                    'total_questions' => $attempt->total_questions,
-                    'started_at' => $attempt->started_at,
-                    'completed_at' => $attempt->completed_at,
-                    'tab_switches' => $attempt->tab_switches,
-                ];
-            });
+            ->get();
 
-        $count = $attempts->count();
+        $attempts = $allAttempts->map(function ($attempt) {
+            $student = $attempt->student;
+            return [
+                'id' => $attempt->id,
+                'status' => $attempt->status,
+                'student' => [
+                    'id' => $student?->id,
+                    'name' => $student
+                        ? (($student->user?->first_name ?? '') . ' ' . ($student->user?->last_name ?? ''))
+                        : 'Étudiant inconnu',
+                    'registration_number' => $student?->student_id ?? 'N/A',
+                ],
+                'score' => $attempt->score,           // null for in_progress
+                'correct_count' => $attempt->correct_count,
+                'total_questions' => $attempt->total_questions,
+                'started_at' => $attempt->started_at,
+                'completed_at' => $attempt->completed_at,  // null for in_progress
+                'tab_switches' => $attempt->tab_switches,
+            ];
+        });
+
+        // Stats computed only on completed attempts
+        $completedAttempts = $allAttempts->where('status', 'completed');
+        $count = $completedAttempts->count();
         $stats = [
-            'total_attempts' => $count,
-            'average_score' => $count > 0 ? round((float)$attempts->avg('score'), 2) : 0,
-            'highest_score' => $count > 0 ? (float)$attempts->max('score') : 0,
-            'lowest_score'  => $count > 0 ? (float)$attempts->min('score') : 0,
-            'pass_rate'     => $count > 0
-                ? round(($attempts->where('score', '>=', $quiz->passing_score)->count() / $count) * 100, 1)
+            'total_attempts'   => $allAttempts->count(),
+            'completed_count'  => $count,
+            'in_progress_count'=> $allAttempts->where('status', 'in_progress')->count(),
+            'average_score'    => $count > 0 ? round((float)$completedAttempts->avg('score'), 2) : 0,
+            'highest_score'    => $count > 0 ? (float)$completedAttempts->max('score') : 0,
+            'lowest_score'     => $count > 0 ? (float)$completedAttempts->min('score') : 0,
+            'pass_rate'        => $count > 0
+                ? round(($completedAttempts->where('score', '>=', $quiz->passing_score)->count() / $count) * 100, 1)
                 : 0,
         ];
 
